@@ -35,3 +35,15 @@ epithet_from_sp <- function(x, sep = " ") {
 is_uniq_2 <- function(...) {
   is_uniq(..., allow.na = TRUE)
 }
+
+not_missing <- function(x) {
+  if (length(x) == 0 | length(x) == 1) {
+    if (is.null(x)) {
+      return(FALSE)
+    }
+    if (is.na(x)) {
+      return(FALSE)
+    }
+  }
+  return(TRUE)
+}

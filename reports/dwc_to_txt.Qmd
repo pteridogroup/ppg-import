@@ -1,0 +1,112 @@
+---
+title: "PPG"
+format:
+  gfm:
+    toc: false
+    wrap: none
+execute: 
+  echo: false
+  message: false
+  warning: false
+---
+
+```{r}
+#| label: setup
+library(tidyverse)
+library(gluedown)
+library(glue)
+library(assertr)
+
+source(here::here("R/functions.R"))
+```
+
+```{r}
+#| label: load-data
+wf_dwc <- read_csv(here::here("data/wf_dwc.csv")) %>%
+  mutate(order = 1:nrow(.) %>% as.numeric)
+```
+
+```{r}
+#| label: headers
+#| results: asis
+
+# WF order
+# number sci_name • year ÷ publication °rank
+# @vernacular
+# %taxon_remarks
+# synonyms 
+
+# Need to add spacers between each accepted name
+spacers <-
+  wf_dwc %>%
+  filter(taxonomicStatus == "accepted") %>%
+  transmute(taxonID, spacer = TRUE, order = order - 0.5)
+
+headers <-
+  wf_dwc %>%
+  filter(taxonomicStatus == "accepted") %>%
+  mutate(name_txt = glue("{scientificName}")) %>%
+  mutate(
+     header = case_when(
+       taxonRank == "order" ~ md_heading(name_txt, 2),
+       taxonRank == "family" ~ md_heading(name_txt, 3),
+       taxonRank == "subfamily" ~ md_heading(name_txt, 4),
+       taxonRank == "tribe" ~ md_heading(name_txt, 5),
+       taxonRank == "genus" ~ md_heading(name_txt, 6),
+       taxonRank %in% c("species", "form", "variety", "subspecies") ~
+         md_bullet(md_hardline(name_txt)),
+    )
+  ) %>%
+  select(taxonID, header, order)
+
+remarks <- wf_dwc %>%
+    filter(taxonomicStatus == "accepted", !is.na(taxonRemarks)) %>%
+    transmute(
+      taxonID, note_txt = md_hardline(taxonRemarks), order = order + 0.1)
+
+syns <-
+  wf_dwc %>%
+  filter(taxonomicStatus == "synonym") %>%
+  mutate(syn_txt = glue::glue("= {scientificName} -- {namePublishedIn}")) %>%
+  select(taxonID = acceptedNameUsageID, syn_txt) %>%
+  group_by(taxonID) %>%
+  summarize(syn_txt = list(syn_txt)) %>%
+  mutate(syn_txt = map(syn_txt, md_hardline)) %>%
+  left_join(
+    select(wf_dwc, taxonID, order),
+    by = "taxonID"
+  ) %>%
+  mutate(
+    taxonomicStatus = "synonym",
+    order = order + 0.2) %>%
+  arrange(order)
+
+acc_tax_id <- wf_dwc %>%
+  filter(taxonomicStatus == "accepted") %>%
+  pull(taxonID)
+
+print_dat <-
+  headers %>%
+  bind_rows(spacers) %>%
+  bind_rows(syns) %>%
+  bind_rows(remarks) %>%
+  arrange(order) %>%
+  select(taxonID, order, everything()) %>%
+  # Check that data to print includes all accepted names
+  verify(all(acc_tax_id %in% .$taxonID))
+
+for (i in seq_len(nrow(print_dat))) {
+  if (isTRUE(print_dat$spacer[[i]])) {
+    print(glue::glue(""))
+  }
+  if (not_missing(print_dat$header[[i]])) {
+    print(print_dat$header[[i]])
+  }
+  if (not_missing(print_dat$syn_txt[[i]])) {
+    print(print_dat$syn_txt[[i]])
+  }
+  if (not_missing(print_dat$note_txt[[i]])) {
+    print(print_dat$note_txt[[i]])
+  }
+}
+```
