@@ -4,6 +4,8 @@ format:
   gfm:
     toc: false
     wrap: none
+    output-file: ppg
+    output-ext: md
 execute: 
   echo: false
   message: false
@@ -22,8 +24,14 @@ source(here::here("R/functions.R"))
 
 ```{r}
 #| label: load-data
-wf_dwc <- read_csv(here::here("data/wf_dwc.csv")) %>%
-  mutate(order = 1:nrow(.) %>% as.numeric)
+wf_dwc <- read_csv(
+  here::here("data/wf_dwc.csv"),
+  col_types = cols(.default = col_character())
+  ) %>%
+  mutate(
+    order = seq_len(nrow(.)) %>%
+      as.numeric
+    )
 ```
 
 ```{r}
@@ -45,7 +53,7 @@ spacers <-
 headers <-
   wf_dwc %>%
   filter(taxonomicStatus == "accepted") %>%
-  mutate(name_txt = glue("{scientificName}")) %>%
+  mutate(name_txt = glue("{scientificName} \\-\\- {namePublishedIn}")) %>%
   mutate(
      header = case_when(
        taxonRank == "order" ~ md_heading(name_txt, 2),
@@ -67,7 +75,7 @@ remarks <- wf_dwc %>%
 syns <-
   wf_dwc %>%
   filter(taxonomicStatus == "synonym") %>%
-  mutate(syn_txt = glue::glue("= {scientificName} -- {namePublishedIn}")) %>%
+  mutate(syn_txt = glue::glue("= {scientificName} \\-\\- {namePublishedIn}")) %>%
   select(taxonID = acceptedNameUsageID, syn_txt) %>%
   group_by(taxonID) %>%
   summarize(syn_txt = list(syn_txt)) %>%
