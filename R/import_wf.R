@@ -3,7 +3,6 @@
 # Setup ----
 
 library(tidyverse)
-library(pteridocat)
 library(assertr)
 library(dwctaxon)
 source(here::here("R/functions.R"))
