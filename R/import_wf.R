@@ -5,6 +5,7 @@
 library(tidyverse)
 library(assertr)
 library(dwctaxon)
+library(rgnparser)
 source(here::here("R/functions.R"))
 
 # Set dwctaxon options
@@ -16,7 +17,11 @@ dct_options(
   )
 
 # Load raw data ----
-wf_raw <- read_delim("data_raw/001.csv", delim = "|", show_col_types = FALSE) %>%
+wf_raw <- read_delim(
+  "data_raw/001.csv",
+  delim = "|",
+  col_types = cols(.default = col_character())
+  ) %>%
   janitor::clean_names() %>%
   janitor::remove_empty("cols") %>%
   # Remove two duplicated names
@@ -26,6 +31,16 @@ wf_raw <- read_delim("data_raw/001.csv", delim = "|", show_col_types = FALSE) %>
       "Davallia seramensis (M. Kato) comb. ined.",
       # misformatted name, need to follow-up with MH
       "^z\t\t\t\t= Marsilea hickenii Herter")
+  ) %>%
+  # Fix some mis-classifications
+  mutate(
+    number = case_when(
+        # Change Pleurosoriopsis from subfam Microsoroideae to Polypodioideae
+      name == "Pleurosoriopsis Fomin" ~ "051.5006",
+        # Fix typo in Dryopolystichum: should be 046.0002 not 045.0002
+      name == "Dryopolystichum Copel." ~ "046.0002",
+      TRUE ~ number
+    )
   )
 
 # Initial cleaning ----
@@ -289,7 +304,55 @@ genus_by_num %>%
   assert(not_na, parentNameUsageID) %>%
   dct_check_taxon_id()
 
-species_mapped <-
+# Make tibble of accepted species for looking up parent taxon of
+# infrasp taxa
+acc_sp <-
+  rank_by_num %>%
+  filter(taxonRank == "species") %>%
+  mutate(
+    genericName = genus_from_sp(scientificName),
+    specificEpithet = epithet_from_sp(scientificName)
+    ) %>%
+  # need to match on genus + epithet, so make sure that combination is unique
+  assert_rows(col_concat, is_uniq, genericName, specificEpithet)
+
+# Make autonyms (accepted names only) for infraspecific taxa that lack species
+autonyms_acc <-
+wf_dwc_no_parentage %>%
+  filter(taxonomicStatus == "accepted") %>%
+  filter(taxonRank %in% c("subspecies", "form", "variety")) %>%
+  mutate(
+    taxon = gn_parse_tidy(scientificName)$canonicalsimple,
+    author = gn_parse_tidy(scientificName)$authorship
+    ) %>%
+  mutate(
+    genericName = genus_from_sp(scientificName),
+    specificEpithet = epithet_from_sp(scientificName)
+    ) %>%
+  anti_join(acc_sp, by = c("genericName", "specificEpithet")) %>%
+  select(-genericName, -specificEpithet) %>%
+  separate(taxon, c("genericName", "specificEpithet", "infraspecificEpithet"), sep = " ") %>%
+  assert(not_na, genericName, specificEpithet, infraspecificEpithet) %>%
+  filter(specificEpithet == infraspecificEpithet) %>%
+  left_join(
+    select(rank_by_num, number, minor_num, major_num, scientificName),
+    by = "scientificName"
+  ) %>%
+  transmute(
+    number,
+    minor_num,
+    major_num,
+    scientificName = paste(genericName, specificEpithet, author),
+    namePublishedIn = namePublishedIn,
+    taxonRank = "species",
+    taxonomicStatus = "accepted",
+    taxonRemarks = "autonym"
+  ) %>%
+  mutate(taxonID = make_taxon_id(., scientificName, namePublishedIn))
+
+# Map species to genus
+# - those that are not autonyms first
+species_mapped_no_autonyms <-
   rank_by_num %>%
   filter(taxonRank == "species") %>%
   left_join(
@@ -305,18 +368,29 @@ species_mapped <-
   assert(not_na, parentNameUsageID) %>%
   dct_check_taxon_id()
 
-# Make tibble of accepted species for looking up parent taxon of
-# infrasp taxa
-acc_sp <-
-  rank_by_num %>%
-  filter(taxonRank == "species") %>%
-  mutate(
-    genericName = genus_from_sp(scientificName),
-    specificEpithet = epithet_from_sp(scientificName)
-    ) %>%
-  # need to match on genus + epithet, so make sure that combination is unique
-  assert_rows(col_concat, is_uniq, genericName, specificEpithet)
+# - then autonyms
+autonyms_mapped <-
+  autonyms_acc %>%
+  left_join(
+    select(
+      genus_by_num,
+      parentNameUsageID = taxonID,
+      parentNameUsage = scientificName,
+      number,
+    ),
+    by = join_by(number)
+  ) %>%
+  select(any_of(dct_terms$term)) %>%
+  assert(not_na, parentNameUsageID) %>%
+  dct_check_taxon_id()
 
+species_mapped <- bind_rows(
+  species_mapped_no_autonyms,
+  autonyms_mapped
+  )%>%
+  dct_check_taxon_id()
+
+# Map infrasp to species
 infrasp_mapped <-
 rank_by_num %>%
   filter(taxonRank %in% c("subspecies", "form", "variety")) %>%
@@ -326,16 +400,15 @@ rank_by_num %>%
     ) %>%
   left_join(
     transmute(
-      acc_sp,
+      species_mapped,
       parentNameUsageID = taxonID,
-      genericName,
-      specificEpithet
+      genericName = genus_from_sp(scientificName),
+      specificEpithet = epithet_from_sp(scientificName)
     ),
     by = c("genericName", "specificEpithet")
   ) %>%
   select(any_of(dct_terms$term)) %>%
-  filter(!is.na(parentNameUsageID)) %>%
-  # TODO not all infraspecific taxa have autonyms, e.g., Spinulum annotinum
+  assert(not_na, parentNameUsageID) %>%
   dct_check_taxon_id()
 
 # Combine the mapped higher taxa
@@ -356,6 +429,8 @@ parent_mapping <-
 
 wf_dwc_no_higher_tax <-
   wf_dwc_no_parentage %>%
+  # add autonyms
+  bind_rows(select(autonyms_acc, any_of(dct_terms$term))) %>%
   # add parent usage for accepted names
   left_join(
     rename(parent_mapping, parentNameUsageID_1 = parentNameUsageID),
@@ -375,7 +450,8 @@ wf_dwc_acc_only_no_higher_tax <-
   filter(taxonomicStatus == "accepted")
 
 # Add higher level taxa columns
-higher_taxa <-
+# things are simple above genus: can join order -> family -> subfamily
+higher_taxa_above_genus <-
 wf_dwc_acc_only_no_higher_tax %>%
   filter(taxonRank == "order") %>%
   select(order = scientificName, order_id = taxonID) %>%
@@ -405,37 +481,62 @@ wf_dwc_acc_only_no_higher_tax %>%
       tribe = scientificName),
     by = "subfamily_id",
     multiple = "all") %>%
-  assert(is_uniq_2, tribe) %>%
+  assert(is_uniq_2, tribe)
+
+# at genus level things get tricky
+# three scenarios
+# family -> genus (no subfamily)
+# family -> subfamily -> genus (no tribe)
+# family -> subfamiy -> tribe -> genus (most nested)
+
+higher_taxa_genus_in_tribe <-
+  higher_taxa_above_genus %>%
   left_join(
     filter(wf_dwc_acc_only_no_higher_tax, taxonRank == "genus") %>%
     select(
-      genus_id_1 = taxonID,
+      genus_id = taxonID,
       tribe_id = parentNameUsageID,
-      genus_1 = scientificName),
+      genus = scientificName),
     by = "tribe_id",
     multiple = "all") %>%
-  assert(is_uniq_2, genus_1) %>%
+  assert(is_uniq_2, genus) %>%
+  filter(!is.na(genus))
+
+higher_taxa_genus_in_subfamily <-
+  higher_taxa_above_genus %>%
+  filter(is.na(tribe)) %>%
   left_join(
     filter(wf_dwc_acc_only_no_higher_tax, taxonRank == "genus") %>%
     select(
-      genus_id_2 = taxonID,
+      genus_id = taxonID,
       subfamily_id = parentNameUsageID,
-      genus_2 = scientificName),
+      genus = scientificName),
     by = "subfamily_id",
     multiple = "all") %>%
-  assert(is_uniq_2, genus_2) %>%
+  assert(is_uniq_2, genus) %>%
+  filter(!is.na(genus))
+
+higher_taxa_genus_in_family <-
+  higher_taxa_above_genus %>%
   left_join(
     filter(wf_dwc_acc_only_no_higher_tax, taxonRank == "genus") %>%
+    anti_join(higher_taxa_genus_in_tribe, by = c(taxonID = "genus_id")) %>%
+    anti_join(higher_taxa_genus_in_subfamily, by = c(taxonID = "genus_id")) %>%
     select(
-      genus_id_3 = taxonID,
+      genus_id = taxonID,
       family_id = parentNameUsageID,
-      genus_3 = scientificName),
+      genus = scientificName),
     by = "family_id",
     multiple = "all") %>%
-  assert(is_uniq_2, genus_3) %>%
-  mutate(
-    genus = coalesce(genus_1, genus_2, genus_3),
-    genus_id = coalesce(genus_id_1, genus_id_2, genus_id_3)
+  assert(is_uniq_2, genus) %>%
+  filter(!is.na(genus))
+
+# Combine mapped higher taxa
+higher_taxa <-
+  bind_rows(
+    higher_taxa_genus_in_tribe,
+    higher_taxa_genus_in_subfamily,
+    higher_taxa_genus_in_family
   ) %>%
   assert(is_uniq_2, genus) %>%
   select(genus, tribe, subfamily, family, order) %>%
@@ -444,9 +545,10 @@ wf_dwc_acc_only_no_higher_tax %>%
   assert(not_na, genus) %>%
   assert(is_uniq, genus)
 
-# Add higher taxa
-wf_dwc_acc_only_inc_higher_tax <- bind_rows(
-  filter(wf_dwc_acc_only_no_higher_tax, taxonRank == "order"),
+# Map higher taxa to taxonID of accepted names
+higher_taxa_taxon_id_map_acc <- bind_rows(
+  filter(wf_dwc_acc_only_no_higher_tax, taxonRank == "order") %>%
+    mutate(order = genus_from_sp(scientificName)),
   filter(wf_dwc_acc_only_no_higher_tax, taxonRank == "family") %>%
     mutate(family = genus_from_sp(scientificName)) %>%
     left_join(unique(select(higher_taxa, family, order)), by = "family"),
@@ -458,13 +560,9 @@ wf_dwc_acc_only_inc_higher_tax <- bind_rows(
     mutate(tribe = genus_from_sp(scientificName)) %>%
     left_join(
       unique(select(higher_taxa, tribe, family, order)), by = "tribe"),
-  filter(wf_dwc_acc_only_no_higher_tax, taxonRank == "genus") %>%
-    mutate(genus = genus_from_sp(scientificName)) %>%
-    left_join(
-      unique(select(higher_taxa, genus, family, order)), by = "genus"),
   filter(
     wf_dwc_acc_only_no_higher_tax,
-    taxonRank %in% c("species", "subspecies", "form", "variety")) %>%
+    taxonRank %in% c("genus", "species", "subspecies", "form", "variety")) %>%
     mutate(genus = genus_from_sp(scientificName)) %>%
     left_join(
       unique(select(higher_taxa, genus, family, order)), by = "genus")
@@ -476,23 +574,50 @@ wf_dwc_acc_only_inc_higher_tax <- bind_rows(
     by = "taxonID"
   ) %>%
   dct_validate(check_col_names = FALSE) %>%
-  select(taxonID, genus, tribe, subfamily, family, order)
+  select(taxonID, genus, tribe, subfamily, family, order) %>%
+  assert(not_na, taxonID) %>%
+  assert(is_uniq, taxonID)
+
+# Map higher taxa to taxonID of synonyms
+higher_taxa_taxon_id_map_syns <- wf_dwc_no_parentage %>%
+  filter(str_detect(taxonomicStatus, "synonym")) %>%
+  select(taxonID, acceptedNameUsageID) %>%
+  left_join(higher_taxa_taxon_id_map_acc, by = c(acceptedNameUsageID = "taxonID")) %>%
+  select(-acceptedNameUsageID) %>%
+  assert(not_na, taxonID) %>%
+  assert(is_uniq, taxonID)
+
+higher_taxa_taxon_id_map <- bind_rows(
+  higher_taxa_taxon_id_map_acc,
+  higher_taxa_taxon_id_map_syns
+) %>%
+  assert(not_na, taxonID) %>%
+  assert(is_uniq, taxonID)
 
 wf_dwc <-
 wf_dwc_no_higher_tax %>%
-  left_join(wf_dwc_acc_only_inc_higher_tax, by = "taxonID") %>%
-  left_join(
-    wf_dwc_acc_only_inc_higher_tax,
-    by = c(acceptedNameUsageID = "taxonID")) %>%
-  mutate(
-    genus = coalesce(genus.x, genus.y),
-    tribe = coalesce(tribe.x, tribe.y),
-    subfamily = coalesce(subfamily.x, subfamily.y),
-    family = coalesce(family.x, family.y),
-    order = coalesce(order.x, order.y)
+  left_join(higher_taxa_taxon_id_map, by = "taxonID") %>%
+  assert(not_na, order) %>%
+  dct_fill_col(
+    fill_to = "acceptedNameUsage",
+    fill_from = "scientificName",
+    match_to = "taxonID",
+    match_from = "acceptedNameUsageID"
   ) %>%
-  select(-matches("\\.x|\\.y")) %>%
+  dct_fill_col(
+    fill_to = "parentNameUsage",
+    fill_from = "scientificName",
+    match_to = "taxonID",
+    match_from = "parentNameUsageID"
+  ) %>%
   dct_validate(check_col_names = FALSE)
+
+# Verify that all names have parentNameUsageID except for 'order' which is the
+# highest rank
+wf_dwc %>%
+  filter(is.na(parentNameUsageID)) %>%
+  count(taxonRank) %>%
+  verify(.$taxonRank == "order", success_fun = success_logical)
 
 # Save final data in DWC format ----
 write_csv(wf_dwc, "data/wf_dwc.csv")
