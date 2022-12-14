@@ -624,6 +624,7 @@ wf_dwc_no_higher_tax %>%
     match_to = "taxonID",
     match_from = "parentNameUsageID"
   ) %>%
+  mutate(modified = NA) %>%
   dct_validate(check_col_names = FALSE)
 
 # Verify that all names have parentNameUsageID except for 'order' which is the
