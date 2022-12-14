@@ -151,6 +151,11 @@ rank_by_num <-
     taxonomicStatus = "accepted"
   )
 
+# Save ordering of orders
+rank_by_num %>%
+  filter(taxonRank == "order") %>%
+  write_csv("data/wf_order_num.csv")
+
 # Split out each high-level taxon and parse the number system
 order_by_num <- filter(rank_by_num, taxonRank == "order") %>%
   arrange(number) %>%
@@ -331,7 +336,9 @@ wf_dwc_no_parentage %>%
     ) %>%
   anti_join(acc_sp, by = c("genericName", "specificEpithet")) %>%
   select(-genericName, -specificEpithet) %>%
-  separate(taxon, c("genericName", "specificEpithet", "infraspecificEpithet"), sep = " ") %>%
+  separate(
+    taxon,
+    c("genericName", "specificEpithet", "infraspecificEpithet"), sep = " ") %>%
   assert(not_na, genericName, specificEpithet, infraspecificEpithet) %>%
   filter(specificEpithet == infraspecificEpithet) %>%
   left_join(
@@ -551,21 +558,27 @@ higher_taxa_taxon_id_map_acc <- bind_rows(
     mutate(order = genus_from_sp(scientificName)),
   filter(wf_dwc_acc_only_no_higher_tax, taxonRank == "family") %>%
     mutate(family = genus_from_sp(scientificName)) %>%
-    left_join(unique(select(higher_taxa, family, order)), by = "family"),
+    left_join(unique(select(higher_taxa, family, order)), by = "family") %>%
+    assert(not_na, family, order),
   filter(wf_dwc_acc_only_no_higher_tax, taxonRank == "subfamily") %>%
     mutate(subfamily = genus_from_sp(scientificName)) %>%
     left_join(
-      unique(select(higher_taxa, subfamily, family, order)), by = "subfamily"),
+      unique(
+        select(higher_taxa, subfamily, family, order)), by = "subfamily"
+      ) %>%
+    assert(not_na, subfamily, family, order),
   filter(wf_dwc_acc_only_no_higher_tax, taxonRank == "tribe") %>%
     mutate(tribe = genus_from_sp(scientificName)) %>%
     left_join(
-      unique(select(higher_taxa, tribe, family, order)), by = "tribe"),
+      unique(
+        select(higher_taxa, tribe, subfamily, family, order)), by = "tribe") %>%
+    assert(not_na, tribe, subfamily, family, order),
   filter(
     wf_dwc_acc_only_no_higher_tax,
     taxonRank %in% c("genus", "species", "subspecies", "form", "variety")) %>%
     mutate(genus = genus_from_sp(scientificName)) %>%
-    left_join(
-      unique(select(higher_taxa, genus, family, order)), by = "genus")
+    left_join(higher_taxa, by = "genus") %>%
+    assert(not_na, genus, family, order)
 ) %>%
   verify(all(taxonID %in% wf_dwc_acc_only_no_higher_tax$taxonID)) %>%
   left_join(
@@ -582,7 +595,8 @@ higher_taxa_taxon_id_map_acc <- bind_rows(
 higher_taxa_taxon_id_map_syns <- wf_dwc_no_parentage %>%
   filter(str_detect(taxonomicStatus, "synonym")) %>%
   select(taxonID, acceptedNameUsageID) %>%
-  left_join(higher_taxa_taxon_id_map_acc, by = c(acceptedNameUsageID = "taxonID")) %>%
+  left_join(
+    higher_taxa_taxon_id_map_acc, by = c(acceptedNameUsageID = "taxonID")) %>%
   select(-acceptedNameUsageID) %>%
   assert(not_na, taxonID) %>%
   assert(is_uniq, taxonID)
