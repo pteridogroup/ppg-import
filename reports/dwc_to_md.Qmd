@@ -24,14 +24,35 @@ source(here::here("R/functions.R"))
 
 ```{r}
 #| label: load-data
-wf_dwc <- read_csv(
+wf_dwc_unsorted <- read_csv(
   here::here("data/wf_dwc.csv"),
   col_types = cols(.default = col_character())
-  ) %>%
+  )
+
+# Load ranking of orders for sorting
+order_rank <-
+  read_csv(here::here("data/wf_order_num.csv")) %>%
+  transmute(
+    order = genus_from_sp(scientificName),
+    order_rank = str_pad(major_num, 2, "left", "0"))
+
+# Sort data
+wf_dwc <-
+  wf_dwc_unsorted %>%
+  arrange_acc_syn() %>%
+  left_join(order_rank, by = "order") %>%
+  assert(not_na, order_rank) %>%
+  mutate(is_order = if_else(taxonRank == "order", 0, 1)) %>%
+  mutate(is_family = if_else(taxonRank == "family", 0, 1)) %>%
+  mutate(is_subfamily = if_else(taxonRank == "subfamily", 0, 1)) %>%
+  mutate(is_tribe = if_else(taxonRank == "tribe", 0, 1)) %>%
+  mutate(is_genus = if_else(taxonRank == "genus", 0, 1)) %>%
   mutate(
-    order = seq_len(nrow(.)) %>%
-      as.numeric
-    )
+    higher_tax = paste(
+      order_rank, is_order, family, is_family, subfamily, is_subfamily, 
+      tribe, is_tribe, genus, is_genus, sep = " | ")) %>%
+  arrange(higher_tax) %>%
+  mutate(sort_order = 1:nrow(.))
 ```
 
 ```{r}
@@ -48,7 +69,7 @@ wf_dwc <- read_csv(
 spacers <-
   wf_dwc %>%
   filter(taxonomicStatus == "accepted") %>%
-  transmute(taxonID, spacer = TRUE, order = order - 0.5)
+  transmute(taxonID, spacer = TRUE, sort_order = sort_order - 0.5)
 
 headers <-
   wf_dwc %>%
@@ -65,29 +86,31 @@ headers <-
          md_bullet(md_hardline(name_txt)),
     )
   ) %>%
-  select(taxonID, header, order)
+  select(taxonID, header, sort_order)
 
 remarks <- wf_dwc %>%
     filter(taxonomicStatus == "accepted", !is.na(taxonRemarks)) %>%
     transmute(
-      taxonID, note_txt = md_hardline(taxonRemarks), order = order + 0.1)
+      taxonID,
+      note_txt = md_hardline(taxonRemarks), sort_order = sort_order + 0.1)
 
 syns <-
   wf_dwc %>%
   filter(taxonomicStatus == "synonym") %>%
-  mutate(syn_txt = glue::glue("= {scientificName} \\-\\- {namePublishedIn}")) %>%
+  mutate(
+    syn_txt = glue::glue("= {scientificName} \\-\\- {namePublishedIn}")) %>%
   select(taxonID = acceptedNameUsageID, syn_txt) %>%
   group_by(taxonID) %>%
   summarize(syn_txt = list(syn_txt)) %>%
   mutate(syn_txt = map(syn_txt, md_hardline)) %>%
   left_join(
-    select(wf_dwc, taxonID, order),
+    select(wf_dwc, taxonID, sort_order),
     by = "taxonID"
   ) %>%
   mutate(
     taxonomicStatus = "synonym",
-    order = order + 0.2) %>%
-  arrange(order)
+    sort_order = sort_order + 0.2) %>%
+  arrange(sort_order)
 
 acc_tax_id <- wf_dwc %>%
   filter(taxonomicStatus == "accepted") %>%
@@ -98,8 +121,8 @@ print_dat <-
   bind_rows(spacers) %>%
   bind_rows(syns) %>%
   bind_rows(remarks) %>%
-  arrange(order) %>%
-  select(taxonID, order, everything()) %>%
+  arrange(sort_order) %>%
+  select(taxonID, sort_order, everything()) %>%
   # Check that data to print includes all accepted names
   verify(all(acc_tax_id %in% .$taxonID))
 

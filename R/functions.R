@@ -47,3 +47,26 @@ not_missing <- function(x) {
   }
   return(TRUE)
 }
+
+# Function to arrange df so accepted names are first, then synonyms
+arrange_acc_syn <- function(tax_dat) {
+  syns <- tax_dat %>%
+  filter(!is.na(acceptedNameUsage)) %>%
+  mutate(name_temp = acceptedNameUsage) %>%
+  group_by(name_temp) %>%
+  arrange(scientificName) %>%
+  nest() %>%
+  ungroup()
+
+  acc <- tax_dat %>%
+    filter(is.na(acceptedNameUsage)) %>%
+    mutate(name_temp = scientificName) %>%
+    group_by(name_temp) %>%
+    nest() %>%
+    ungroup()
+  
+  bind_rows(acc, syns) %>%
+    arrange(name_temp) %>%
+    unnest(cols = data) %>%
+    select(-name_temp)
+}
