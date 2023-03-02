@@ -4,8 +4,6 @@ format:
   gfm:
     toc: false
     wrap: none
-    output-file: ppg
-    output-ext: md
 execute: 
   echo: false
   message: false
@@ -14,24 +12,20 @@ execute:
 
 ```{r}
 #| label: setup
-library(tidyverse)
-library(gluedown)
-library(glue)
-library(assertr)
-
+source(here::here("R/packages.R"))
 source(here::here("R/functions.R"))
+wf_dwc_unsorted <- tar_read(wf_dwc)
+tar_load(rank_by_num)
+conflicted::conflict_prefer("filter", "dplyr")
 ```
 
 ```{r}
 #| label: load-data
-wf_dwc_unsorted <- read_csv(
-  here::here("data/wf_dwc.csv"),
-  col_types = cols(.default = col_character())
-  )
 
 # Load ranking of orders for sorting
 order_rank <-
-  read_csv(here::here("data/wf_order_num.csv")) %>%
+  rank_by_num %>%
+  filter(taxonRank == "order") %>%
   transmute(
     order = genus_from_sp(scientificName),
     order_rank = str_pad(major_num, 2, "left", "0"))
@@ -53,15 +47,6 @@ wf_dwc <-
       tribe, is_tribe, genus, is_genus, sep = " | ")) %>%
   arrange(higher_tax) %>%
   mutate(sort_order = 1:nrow(.))
-
-# Save "higher taxa" only to CSV
-wf_dwc %>%
-  filter(!taxonRank %in% c("species", "subspecies", "variety", "form")) %>%
-  # filter(taxonRank == "genus") %>%
-  select(scientificName, taxonRank, taxonomicStatus, acceptedNameUsage,
-  namePublishedIn, genus, tribe, subfamily, family, order) %>%
-  write_csv("working/wf_higher_taxa.csv")
-
 ```
 
 ```{r}

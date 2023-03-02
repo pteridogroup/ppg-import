@@ -1,21 +1,5 @@
 # Convert World Ferns CSV file to Darwin Core CSV file
 
-# Setup ----
-
-library(tidyverse)
-library(assertr)
-library(dwctaxon)
-library(rgnparser)
-source(here::here("R/functions.R"))
-
-# Set dwctaxon options
-dct_options(
-  # - won't error on duplicated sci names
-  check_sci_name = FALSE,
-  valid_tax_status = "accepted, synonym, ambiguous synonym, variant",
-  skip_missing_cols = TRUE
-  )
-
 # Load raw data ----
 wf_raw <- read_delim(
   "data_raw/001.csv",
@@ -137,7 +121,7 @@ wf_with_syn %>%
 
 # * All higher-level taxa (genus and up) are accepted
 rank_by_num <-
-  wf_non_dwc %>%
+  wf_with_syn %>%
   select(number, taxonID) %>%
   left_join(
     select(wf_dwc_no_parentage, taxonID, scientificName, taxonRank),
