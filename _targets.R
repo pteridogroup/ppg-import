@@ -23,7 +23,7 @@ tar_plan(
   # Produce report ----
   tar_quarto(
     wf_report,
-    "reports/dwc_to_md.Qmd",
+    "reports/ppg.Qmd",
     quiet = FALSE,
     packages = c("gluedown", "glue", "tidyverse", "assertr")
   )

@@ -1,0 +1,137 @@
+---
+title: "PPG"
+format:
+  gfm:
+    toc: false
+    wrap: none
+execute: 
+  echo: false
+  message: false
+  warning: false
+---
+
+```{r}
+#| label: setup
+source(here::here("R/packages.R"))
+source(here::here("R/functions.R"))
+wf_dwc_unsorted <- tar_read(wf_dwc)
+tar_load(rank_by_num)
+conflicted::conflict_prefer("filter", "dplyr")
+```
+
+```{r}
+#| label: load-data
+
+# Load ranking of orders for sorting
+order_rank <-
+  rank_by_num %>%
+  filter(taxonRank == "order") %>%
+  transmute(
+    order = genus_from_sp(scientificName),
+    order_rank = str_pad(major_num, 2, "left", "0"))
+
+# Sort data
+wf_dwc <-
+  wf_dwc_unsorted %>%
+  arrange_acc_syn() %>%
+  left_join(order_rank, by = "order") %>%
+  assert(not_na, order_rank) %>%
+  mutate(is_order = if_else(taxonRank == "order", 0, 1)) %>%
+  mutate(is_family = if_else(taxonRank == "family", 0, 1)) %>%
+  mutate(is_subfamily = if_else(taxonRank == "subfamily", 0, 1)) %>%
+  mutate(is_tribe = if_else(taxonRank == "tribe", 0, 1)) %>%
+  mutate(is_genus = if_else(taxonRank == "genus", 0, 1)) %>%
+  mutate(
+    higher_tax = paste(
+      order_rank, is_order, family, is_family, subfamily, is_subfamily, 
+      tribe, is_tribe, genus, is_genus, sep = " | ")) %>%
+  arrange(higher_tax) %>%
+  mutate(sort_order = 1:nrow(.))
+```
+
+```{r}
+#| label: headers
+#| results: asis
+
+# WF order
+# number sci_name • year ÷ publication °rank
+# @vernacular
+# %taxon_remarks
+# synonyms 
+
+# Need to add spacers between each accepted name
+spacers <-
+  wf_dwc %>%
+  filter(taxonomicStatus == "accepted") %>%
+  transmute(taxonID, spacer = TRUE, sort_order = sort_order - 0.5)
+
+headers <-
+  wf_dwc %>%
+  filter(taxonomicStatus == "accepted") %>%
+  mutate(name_txt = glue("{scientificName} \\-\\- {namePublishedIn}")) %>%
+  mutate(
+     header = case_when(
+       taxonRank == "order" ~ md_heading(name_txt, 2),
+       taxonRank == "family" ~ md_heading(name_txt, 3),
+       taxonRank == "subfamily" ~ md_heading(name_txt, 4),
+       taxonRank == "tribe" ~ md_heading(name_txt, 5),
+       taxonRank == "genus" ~ md_heading(name_txt, 6),
+       taxonRank %in% c("species", "form", "variety", "subspecies") ~
+         md_bullet(md_hardline(name_txt)),
+    )
+  ) %>%
+  select(taxonID, header, sort_order)
+
+remarks <- wf_dwc %>%
+    filter(taxonomicStatus == "accepted", !is.na(taxonRemarks)) %>%
+    transmute(
+      taxonID,
+      note_txt = md_hardline(taxonRemarks), sort_order = sort_order + 0.1)
+
+syns <-
+  wf_dwc %>%
+  filter(taxonomicStatus == "synonym") %>%
+  mutate(
+    syn_txt = glue::glue("= {scientificName} \\-\\- {namePublishedIn}")) %>%
+  select(taxonID = acceptedNameUsageID, syn_txt) %>%
+  group_by(taxonID) %>%
+  summarize(syn_txt = list(syn_txt)) %>%
+  mutate(syn_txt = map(syn_txt, md_hardline)) %>%
+  left_join(
+    select(wf_dwc, taxonID, sort_order),
+    by = "taxonID"
+  ) %>%
+  mutate(
+    taxonomicStatus = "synonym",
+    sort_order = sort_order + 0.2) %>%
+  arrange(sort_order)
+
+acc_tax_id <- wf_dwc %>%
+  filter(taxonomicStatus == "accepted") %>%
+  pull(taxonID)
+
+print_dat <-
+  headers %>%
+  bind_rows(spacers) %>%
+  bind_rows(syns) %>%
+  bind_rows(remarks) %>%
+  arrange(sort_order) %>%
+  select(taxonID, sort_order, everything()) %>%
+  # Check that data to print includes all accepted names
+  verify(all(acc_tax_id %in% .$taxonID))
+
+for (i in seq_len(nrow(print_dat))) {
+  if (isTRUE(print_dat$spacer[[i]])) {
+    print(glue::glue(""))
+  }
+  if (not_missing(print_dat$header[[i]])) {
+    print(print_dat$header[[i]])
+  }
+  if (not_missing(print_dat$syn_txt[[i]])) {
+    print(print_dat$syn_txt[[i]])
+  }
+  if (not_missing(print_dat$note_txt[[i]])) {
+    print(print_dat$note_txt[[i]])
+  }
+}
+```
