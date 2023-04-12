@@ -18,8 +18,10 @@ tar_plan(
   wf_dwc_no_parentage = remove_parentage(wf_with_syn, wf_syns),
   # - Split out numbered ranks
   rank_by_num = get_rank_by_num(wf_with_syn, wf_syns, wf_dwc_no_parentage),
-  # - Final clean data frame
+  # - Final clean data frame at species level
   wf_dwc = clean_wf(wf_with_syn, wf_syns, rank_by_num, wf_dwc_no_parentage),
+  # - Final data frame at genus and higher
+  wf_dwc_gen = filter_to_genus(wf_dwc),
   # Produce report ----
   tar_quarto(
     wf_report,

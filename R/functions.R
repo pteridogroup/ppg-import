@@ -676,3 +676,30 @@ arrange_acc_syn <- function(tax_dat) {
     unnest(cols = data) %>%
     select(-name_temp)
 }
+
+#' Parse HTML expressions back into plain text
+#'
+#' For example, the ampersand symbol (&) is indicated in HTML like "&amp;"
+#' @param str A character vector
+#' @return A character vector
+#' @example
+#' unescape_html("You &amp; I")
+unescape_html <- function(str) {
+  unescape_html_single <- function(str){
+    xml2::xml_text(xml2::read_html(paste0("<x>", str, "</x>")))
+  }
+  purrr::map_chr(str, unescape_html_single)
+}
+
+#' Filter taxonomic data to only levels at genus or higher and convert HTML
+#' expressions to plain text
+#'
+#' @param wf_dwc Dataframe; World Ferns taxonomic data in Darwin Core format
+filter_to_genus <- function(wf_dwc) {
+  wf_dwc %>%
+    filter(!taxonRank %in% c("form", "species", "subspecies", "variety")) %>%
+    # allow one non-valid column name through: tribe
+    dct_validate(check_col_names = FALSE) %>%
+    filter(taxonomicStatus == "accepted") %>%
+    mutate(across(everything(), unescape_html))
+}
