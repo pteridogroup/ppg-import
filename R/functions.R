@@ -11,21 +11,19 @@ load_raw_wf <- function(path) {
   ) %>%
   janitor::clean_names() %>%
   janitor::remove_empty("cols") %>%
-  # Remove two duplicated names
+  # Remove duplicated names
   filter(
     !name %in% c(
-      "Tectaria fungii S.Y.Dong",
-      "Davallia seramensis (M. Kato) comb. ined.",
-      # misformatted name, need to follow-up with MH
-      "^z\t\t\t\t= Marsilea hickenii Herter")
+      "Cyathea lewisii (C. V. Morton &amp; Proctor) Proctor",
+      "Anemia candidoi Brade"
+    )
   ) %>%
   # Fix some mis-classifications
   mutate(
     number = case_when(
-        # Change Pleurosoriopsis from subfam Microsoroideae to Polypodioideae
-      name == "Pleurosoriopsis Fomin" ~ "051.5006",
-        # Fix typo in Dryopolystichum: should be 046.0002 not 045.0002
-      name == "Dryopolystichum Copel." ~ "046.0002",
+      # Change Pleurosoriopsis from subfam Microsoroideae to 
+      # Polypodioideae (039.500x)
+      name == "Pleurosoriopsis Fomin" ~ "039.5006",
       TRUE ~ number
     )
   ) %>%
