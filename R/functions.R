@@ -675,6 +675,15 @@ unescape_html <- function(str) {
   purrr::map_chr(str, unescape_html_single)
 }
 
+#' Parse HTML expressions back into plain text for an entire dataframe
+#'
+#' For example, the ampersand symbol (&) is indicated in HTML like "&amp;"
+#' @param df A dataframe
+#' @return A dataframe
+unescape_html_df <- function (df) {
+  mutate(df, across(everything(), unescape_html))
+}
+
 #' Filter taxonomic data to only levels at genus or higher and convert HTML
 #' expressions to plain text
 #'
@@ -683,7 +692,40 @@ filter_to_genus <- function(wf_dwc) {
   wf_dwc %>%
     filter(!taxonRank %in% c("form", "species", "subspecies", "variety")) %>%
     # allow one non-valid column name through: tribe
-    dct_validate(check_col_names = FALSE) %>%
-    filter(taxonomicStatus == "accepted") %>%
-    mutate(across(everything(), unescape_html))
+    dct_validate(check_col_names = FALSE)   
+}
+
+sort_wf_dwc <- function(wf_dwc_unsorted, rank_by_num) {
+  # Load ranking of orders for sorting
+order_rank <-
+  rank_by_num %>%
+  filter(taxonRank == "order") %>%
+  transmute(
+    order = genus_from_sp(scientificName),
+    order_rank = str_pad(major_num, 2, "left", "0"))
+
+# Sort data
+wf_dwc_unsorted %>%
+  arrange_acc_syn() %>%
+  left_join(order_rank, by = "order") %>%
+  assert(not_na, order_rank) %>%
+  mutate(is_order = if_else(taxonRank == "order", 0, 1)) %>%
+  mutate(is_family = if_else(taxonRank == "family", 0, 1)) %>%
+  mutate(is_subfamily = if_else(taxonRank == "subfamily", 0, 1)) %>%
+  mutate(is_tribe = if_else(taxonRank == "tribe", 0, 1)) %>%
+  mutate(is_genus = if_else(taxonRank == "genus", 0, 1)) %>%
+  mutate(
+    higher_tax = paste(
+      order_rank, is_order, family, is_family, subfamily, is_subfamily, 
+      tribe, is_tribe, genus, is_genus, sep = " | ")) %>%
+  arrange(higher_tax) %>%
+  mutate(sort_order = 1:nrow(.)) %>%
+  select(-contains("is_"))
+}
+
+# Write a csv and return the output path.
+# for targets pipelines.
+write_csv_tar <- function(x, file, ...) {
+  write_csv(x = x, file = file, ...)
+  file
 }
