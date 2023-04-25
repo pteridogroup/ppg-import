@@ -2,6 +2,11 @@
 source("R/packages.R")
 source("R/functions.R")
 
+tar_option_set(
+  packages = c("dwctaxon"),
+  imports = c("dwctaxon")
+)
+
 # Note that dwctatxon options are set in .Rprofile
 
 tar_plan(
