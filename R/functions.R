@@ -595,8 +595,7 @@ digest_any <- function(...) {
 make_taxon_id <- function(df, ...) {
   df %>%
     dplyr::select(...) %>%
-    purrr::pmap_chr(digest_any) %>%
-    substr(1, 12)
+    purrr::pmap_chr(digest_any)
 }
 
 end_of_next_val <- function(x) {
