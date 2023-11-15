@@ -43,6 +43,12 @@ tar_plan(
     quiet = FALSE,
     packages = c("gluedown", "glue", "tidyverse", "assertr")
   ),
+  # Check the status of newly approved taxa in World Ferns ---
+  #
+  # The newly approved taxa are appended to the beginning of the data
+  # as `new_taxon` and `new_rank`. If the rest of the columns are `NA`,
+  # it indicates that these taxa may not be in the WF data.
+  name_check = check_new_taxa(wf_dwc_gen),
   # Produce CSV file ---
   # - Data frame at genus and higher, sorted by rank
   tar_file(

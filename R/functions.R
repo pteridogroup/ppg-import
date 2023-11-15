@@ -728,3 +728,76 @@ write_csv_tar <- function(x, file, ...) {
   write_csv(x = x, file = file, ...)
   file
 }
+
+
+# Extract useful information to dataframe
+# TODO: this is used in multiple repos (ppg-import, ppg-voting), so should
+# be put into a package
+fetch_issues <- function(repo) {
+
+  issues_json <-
+    glue::glue("https://api.github.com/repos/{repo}/issues?state=all") |>
+    jsonlite::fromJSON()
+
+  # Create initial tibble of issues (may include PRs)
+  issues_df <- tibble::tibble(
+    number = issues_json$number,
+    title = issues_json$title,
+    url = issues_json$url,
+    created_at = issues_json$created_at,
+    user = issues_json$user$login,
+    state = issues_json$state,
+    body = issues_json$body
+  )
+
+  # If any PRs exist, remove them
+  if (!is.null(issues_json$draft)) {
+    issues_df <-
+      issues_df |>
+      dplyr::mutate(draft = issues_json$draft) |>
+      dplyr::filter(is.na(draft)) |>
+      dplyr::select(-draft)
+  }
+
+  # Format final data frame
+  issues_df |>
+    dplyr::mutate(
+    url = stringr::str_replace_all(
+      url, "https://api.github.com/repos/", "https://github.com/"),
+    name = stringr::str_match(body, "Name of taxon[\r|\n]*(.*)[\r|\n]*") |>
+             magrittr::extract(, 2),
+    rank = stringr::str_match(body, "Rank of taxon[\r|\n]*(\\w+)[\r|\n]*") |>
+             magrittr::extract(, 2),
+    no_species = stringr::str_match(
+      body, "number of species affected[\r|\n]*(.*)") |>
+       magrittr::extract(, 2),
+    description = stringr::str_match(
+      body, "Description of change[\r|\n]*(.*)") |>
+        magrittr::extract(, 2)
+  ) |>
+    dplyr::select(-body)
+}
+
+# Check the status of newly approved taxa in World Ferns
+check_new_taxa <- function(wf_dwc_gen) {
+
+# Filter github issues to only names that have passed voting
+  new_taxa <-
+    fetch_issues("pteridogroup/ppg") %>%
+    filter(str_detect(title, "\\[PASSED\\]")) %>%
+    select(name, rank) %>%
+    mutate(
+      name = str_replace_all(name, "and", ",")
+    ) %>%
+    separate_longer_delim(name, delim = ",") %>%
+    mutate(name = str_squish(name)) %>%
+    rename(taxon = name)
+
+# Left join to World Ferns data to see status of names that passed voting
+  wf_dwc_gen_taxa <-
+    wf_dwc_gen %>%
+    mutate(taxon = gn_parse_tidy(scientificName)$canonicalsimple)
+  
+  left_join(new_taxa, wf_dwc_gen_taxa) %>%
+    rename(new_taxon = taxon, new_rank = rank)
+}
