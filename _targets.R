@@ -49,7 +49,16 @@ tar_plan(
   # as `new_taxon` and `new_rank`. If the rest of the columns are `NA`,
   # it indicates that these taxa may not be in the WF data.
   name_check = check_new_taxa(wf_dwc_gen),
+  # Lookup author names in IPNI ----
+  ipni_query = prep_ipni_query(wf_dwc_gen),
+  tar_target(
+    ipni_results,
+    search_ipni(ipni_query),
+    pattern = map(ipni_query)
+  ),
   # Produce CSV file ---
+  # - v2 of CSV file
+  wf_dwc_gen_v2 = make_ppg_v2(wf_dwc_gen, ipni_results),
   # - Data frame at genus and higher, sorted by rank
   tar_file(
     wf_dwc_gen_csv,
