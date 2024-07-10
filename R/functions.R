@@ -577,16 +577,24 @@ clean_wf <- function(wf_with_syn, wf_syns, rank_by_num, wf_dwc_no_parentage) {
     mutate(modified = NA) %>%
     dct_validate(check_col_names = FALSE)
   
-  # Verify that all names have parentNameUsageID except for 'order' which is the
-  # highest rank
+  # Verify that all accepted names have parentNameUsageID except for 'order',
+  # which is the highest rank
   wf_dwc %>%
-    filter(is.na(parentNameUsageID)) %>%
+    filter(is.na(parentNameUsageID), taxonomicStatus == "accepted") %>%
+    count(taxonRank) %>%
+    verify(.$taxonRank == "order", success_fun = success_logical)
+
+  # Same as above, but all synonyms wihout a parentNameUsageID should
+  # be synonyms of orders
+  wf_dwc %>%
+    filter(is.na(parentNameUsageID), taxonomicStatus == "synonym") %>%
+    select(scientificName, acceptedNameUsageID) %>%
+    left_join(
+      select(wf_dwc, acceptedNameUsageID = taxonID, taxonRank)
+    ) %>%
     count(taxonRank) %>%
     verify(.$taxonRank == "order", success_fun = success_logical)
   
-  wf_dwc
-}
-
 
 digest_any <- function(...) {
   digest::digest(c(...))
