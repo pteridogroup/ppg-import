@@ -39,8 +39,16 @@ load_raw_wf <- function(path) {
     namePublishedIn = literature,
     taxonRemarks = remarks
     ) %>%
+  # Unescape HTML
+  mutate(
+    across(
+      c(scientificName, namePublishedIn,
+        synonyms, taxonRemarks),
+      ~unescape_html(.x)
+    )) %>%
+  # Create unique taxonID
   mutate(taxonID = make_taxon_id(., scientificName, namePublishedIn)) %>%
-    # all sci names are unique
+  # Check that all sci names are unique
   assert(is_uniq, scientificName, taxonID)
 }
 
