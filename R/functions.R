@@ -767,15 +767,27 @@ unescape_html_df <- function (df) {
   mutate(df, across(everything(), unescape_html))
 }
 
-#' Filter taxonomic data to only levels at genus or higher and convert HTML
-#' expressions to plain text
+#' Filter taxonomic data to only levels at genus or higher
 #'
 #' @param wf_dwc Dataframe; World Ferns taxonomic data in Darwin Core format
 filter_to_genus <- function(wf_dwc) {
-  wf_dwc %>%
-    filter(!taxonRank %in% c("form", "species", "subspecies", "variety")) %>%
-    # allow one non-valid column name through: tribe
-    dct_validate(check_col_names = FALSE)   
+  # Remove all names at species and below
+  wf_dwc_no_subsp <- wf_dwc %>%
+    filter(!taxonRank %in% c(
+      "species", "form", "subvariety", "subspecies", "variety"))
+
+  # There are still some rows with NA for taxonRank
+  #  - remove any that don't have an acceptedNameUsageID
+  wf_dwc_no_subsp_missing_rank <-
+    wf_dwc_no_subsp %>%
+    filter(!is.na(acceptedNameUsageID)) %>%
+    anti_join(wf_dwc_no_subsp, join_by(acceptedNameUsageID == taxonID))
+
+  wf_dwc_no_subsp %>%
+    anti_join(wf_dwc_no_subsp_missing_rank, join_by(taxonID)) %>%
+    # filter out a few more synonyms with unknown taxonrank
+    arrange(scientificName) %>%
+    dct_validate()
 }
 
 sort_wf_dwc <- function(wf_dwc_unsorted, rank_by_num) {
