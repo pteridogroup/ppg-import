@@ -819,3 +819,189 @@ check_new_taxa <- function(wf_dwc_gen) {
   left_join(new_taxa, wf_dwc_gen_taxa) %>%
     rename(new_taxon = taxon, new_rank = rank)
 }
+
+parse_pterido_names <- function(wf_dwc) {
+  wf_dwc %>%
+    pull(scientificName) %>%
+    rgnparser::gn_parse_tidy() %>%
+    select(
+      verbatim,
+      taxon = canonicalsimple,
+      scientificNameAuthorship = authorship) %>%
+    unique() %>%
+    # need to manually fix Ericetorum (Jermy) Li Bing Zhang & X. M. Zhou
+    mutate(
+      taxon = case_when(
+         verbatim == "Ericetorum (Jermy) Li Bing Zhang & X. M. Zhou" ~
+           "Ericetorum",
+         .default = taxon
+      )
+    ) %>%
+    mutate(
+      scientificNameAuthorship = case_when(
+         verbatim == "Ericetorum (Jermy) Li Bing Zhang & X. M. Zhou" ~
+           "(Jermy) Li Bing Zhang & X. M. Zhou",
+         .default = scientificNameAuthorship
+      )
+    )
+}
+
+prep_ipni_query <- function(wf_dwc) {
+
+  names_parsed <- parse_pterido_names(wf_dwc)
+
+  names_parsed %>%
+    left_join(
+      select(wf_dwc, verbatim = "scientificName", taxonRank, taxonID),
+      by = "verbatim"
+    ) %>%
+    filter(
+      taxonRank %in% c(
+        "family", "subfamily", "genus", "species",
+        "subspecies", "variety", "form") | is.na(taxonRank)) %>%
+    mutate(ipni_filter = case_when(
+      taxonRank == "family" ~ "families",
+      taxonRank == "subfamily" ~ "infrafamilies",
+      taxonRank == "genus" ~ "genera",
+      taxonRank == "species" ~ "species",
+      taxonRank %in% c("subspecies", "variety", "form") ~ "infraspecies",
+      .default = NA_character_
+    )) %>%
+    select(taxonID, taxon, ipni_filter) %>%
+    unique() %>%
+    assertr::assert(assertr::not_na, c(taxonID, taxon))
+}
+
+pluck_dat <- function(ipni_res, field) {
+    purrr::pluck(ipni_res, "results", 1, field, .default = NA_character_)
+  }
+
+search_ipni_single <- function(taxon, ipni_filter = NULL, taxonID) {
+  if(is.na(ipni_filter)) {
+    ipni_filter <- NULL
+  }
+  suppressMessages(
+    ipni_res <- kewr::search_ipni(
+      query = taxon, filters = ipni_filter)
+  )
+  tibble(
+    taxonID = taxonID,
+    name = pluck_dat(ipni_res, "name"),
+    authors = pluck_dat(ipni_res, "authors"),
+    publishingAuthor = pluck_dat(ipni_res, "publishingAuthor"),
+    rank = pluck_dat(ipni_res, "rank"),
+    publication = pluck_dat(ipni_res, "publication"),
+    publicationId = pluck_dat(ipni_res, "publicationId"),
+    reference = pluck_dat(ipni_res, "reference"),
+    referenceRemarks = pluck_dat(ipni_res, "referenceRemarks"),
+    typeName = pluck_dat(ipni_res, "typeName"),
+    basionymStr = pluck_dat(ipni_res, "basionymStr"),
+    basionymAuthorStr = pluck_dat(ipni_res, "basionymAuthorStr"),
+    basionymId = pluck_dat(ipni_res, "basionymId"),
+    url = pluck_dat(ipni_res, "url"),
+    ipni_id = pluck_dat(ipni_res, "id"),
+    fq_id = pluck_dat(ipni_res, "fqId"),
+    wfo_id = pluck_dat(ipni_res, "wfoId")
+  )
+}
+
+search_ipni <- function(ipni_query) {
+  purrr::pmap_df(
+    dplyr::select(
+      ipni_query,
+      taxon,
+      ipni_filter,
+      taxonID),
+    search_ipni_single,
+    .progress = TRUE)
+}
+
+summarize_ipni_results <- function(wf_dwc_auth_orig, ipni_query, ipni_results) {
+  wf_dwc_auth_orig |>
+    select(taxonID, taxonomicStatus, wf_sci_name = scientificName) |>
+    inner_join(ipni_results, join_by(taxonID)) |>
+    add_count(name, name = "n_ipni_hits") |>
+    mutate(ipni_sci_name = paste(name, authors)) |>
+    mutate(
+      keep = case_when(
+        is.na(name) ~ FALSE,
+        wf_sci_name == ipni_sci_name ~ TRUE,
+        n_ipni_hits > 1 ~ FALSE,
+        n_ipni_hits == 1 ~ TRUE,
+        .default = NA
+      )
+    )
+}
+
+# Convert the author names in World Ferns data to those matched from IPNI
+make_ppg <- function(wf_dwc_auth_orig, ipni_results_summary) {
+
+  wf_dwc_auth_orig <- wf_dwc_auth_orig %>%
+    select(
+      -genus, -tribe, -subfamily, -family, -order)
+
+  ipni_results_complete <- ipni_results_summary %>%
+    filter(keep) %>%
+    transmute(
+      taxonID = taxonID,
+      scientificName = paste(name, authors),
+      namePublishedIn = reference,
+      ipniURL = paste0("https://www.ipni.org", url)
+    )
+
+  wf_dwc_names_in_ipni <-
+    wf_dwc_auth_orig %>%
+    select(-scientificName, -namePublishedIn) %>%
+    inner_join(ipni_results_complete, by = "taxonID")
+
+  wf_dwc_names_missing_from_ipni <-
+    wf_dwc_auth_orig %>%
+    anti_join(wf_dwc_names_in_ipni, by = "taxonID")
+
+  wf_dwc_names_in_ipni %>%
+    bind_rows(wf_dwc_names_missing_from_ipni) %>%
+    # get rid of "subfam." before names in WF data
+    mutate(scientificName = str_remove_all(scientificName, "^subfam\\. ")) %>%
+    # Update NameUsage cols to match new names from IPNI
+    select(-c(acceptedNameUsage, parentNameUsage)) %>%
+    dwctaxon::dct_fill_col(
+      fill_to = "acceptedNameUsage",
+      fill_from = "scientificName",
+      match_to = "taxonID",
+      match_from = "acceptedNameUsageID"
+    ) %>%
+    dwctaxon::dct_fill_col(
+      fill_to = "parentNameUsage",
+      fill_from = "scientificName",
+      match_to = "taxonID",
+      match_from = "parentNameUsageID"
+    ) %>%
+    mutate(
+      modified = NA_character_,
+      modifiedBy = NA_character_,
+      modifiedByID = NA_character_
+    ) %>%
+    select(
+      taxonID,
+      scientificName,
+      taxonRank,
+      taxonomicStatus,
+      acceptedNameUsage,
+      acceptedNameUsageID,
+      parentNameUsage,
+      parentNameUsageID,
+      namePublishedIn,
+      taxonRemarks,
+      ipniURL,
+      modified,
+      modifiedBy,
+      modifiedByID
+    ) %>%
+    # Set final order by sci name, break ties on taxonID
+    arrange(scientificName, taxonID) %>%
+    dwctaxon::dct_validate(
+      extra_cols = c(
+        "ipniURL", "tribe", "modified", "modifiedBy", "modifiedByID")
+    )
+}
+

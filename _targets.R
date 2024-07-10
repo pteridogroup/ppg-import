@@ -23,14 +23,28 @@ tar_plan(
   wf_dwc_no_parentage = remove_parentage(wf_with_syn, wf_syns),
   # - Split out numbered ranks
   rank_by_num = get_rank_by_num(wf_with_syn, wf_syns, wf_dwc_no_parentage),
-  # - Data frame at species level
-  wf_dwc_unsorted = clean_wf(
+  # - Cleanup into dwctaxon format. Still with original author names from WF.
+  #   Data frame at species level, sorted by scientificName
+  wf_dwc_auth_orig = clean_wf(
     wf_with_syn, wf_syns, rank_by_num, wf_dwc_no_parentage),
-  # - Data frame at species level, sort by rank
-  wf_dwc = sort_wf_dwc(wf_dwc_unsorted, rank_by_num),
-  # - Data frame at genus and higher, sorted by rank
-  wf_dwc_gen = filter_to_genus(wf_dwc_unsorted) %>%
-    sort_wf_dwc(rank_by_num),
+
+  # Lookup author names in IPNI ----
+  tar_group_size(
+    ipni_query,
+    prep_ipni_query(wf_dwc_auth_orig),
+    size = 1000
+  ),
+  tar_target(
+    ipni_results,
+    search_ipni(ipni_query),
+    pattern = map(ipni_query)
+  ),
+  ipni_results_summary = summarize_ipni_results(
+    wf_dwc_auth_orig, ipni_query, ipni_results),
+
+  # - Replace World Ferns author names and publications with IPNI data
+  # when available (final PPG dataframe)
+  ppg = make_ppg(wf_dwc_auth_orig, ipni_results_summary),
   # Produce report ----
   tar_quarto_rep(
     wf_report,
