@@ -1083,3 +1083,154 @@ make_ppg <- function(wf_dwc_auth_orig, ipni_results_summary) {
     )
 }
 
+# Helper function for join_higher_taxa()
+add_parent_info <- function(df, parent_df, number) {
+  parent_name_col <- sym(glue("parent_{number}_name"))
+  parent_rank_col <- sym(glue("parent_{number}_rank"))
+  highest_parent_name_col <- sym(glue("parent_{number - 1}_name"))
+
+  df %>%
+    left_join(
+      select(
+        parent_df,
+        scientificName,
+        !!parent_name_col := parentNameUsage,
+        !!parent_rank_col := parentNameRank
+      ),
+      by = setNames("scientificName", as.character(highest_parent_name_col))
+    )
+}
+
+# Helper function for join_higher_taxa()
+pivot_higher_tax <- function(df, names_from, values_from) {
+  ranks <- c("order", "family", "subfamily", "tribe", "genus", "species")
+  df %>%
+    pivot_wider(
+      names_from = {{ names_from }},
+      values_from = {{ values_from }},
+      names_prefix = "."
+    ) %>%
+    select(-`.NA`)
+}
+
+# Helper function for join_higher_taxa()
+combine_columns <- function(df, col_name) {
+  col_sym <- sym(col_name)
+  temp_col_sym <- sym(paste0(".", col_name))
+
+  df %>%
+    mutate(!!col_sym := coalesce(!!col_sym, !!temp_col_sym)) %>%
+    select(-!!temp_col_sym)
+}
+
+# Helper function for join_higher_taxa()
+fill_higher_taxon <- function(df, col_name) {
+  col_sym <- sym(col_name)
+
+  df %>%
+    mutate(
+      !!col_sym := case_when(
+        taxonRank == col_name ~ scientificName,
+        .default = !!col_sym
+      )
+    )
+}
+
+# Join higher taxa (genus, tribe, subfamily, family, order) to PPG dataframe
+join_higher_taxa <- function(wf_dwc) {
+
+  # Prepare initial dataframe for joining parent taxa
+  # Adds non-DWC 'parentNameRank' column
+  wf_dwc_p <-
+    wf_dwc %>%
+    filter(taxonomicStatus == "accepted") %>%
+    select(
+      taxonID, scientificName, taxonRank,
+      parentNameUsage
+    )
+
+  wf_dwc_p <-
+    wf_dwc_p %>%
+    left_join(
+      select(wf_dwc_p, scientificName, parentNameRank = taxonRank),
+      join_by(parentNameUsage == scientificName)
+    )
+
+  # Make dataframe of taxonID for accepted taxa mapped to their higher taxa  
+  accepted_with_higher_taxa <- wf_dwc_p %>%
+    # progressively map on higher taxa
+    rename(parent_1_name = parentNameUsage, parent_1_rank = parentNameRank) %>%
+    add_parent_info(wf_dwc_p, 2) %>%
+    add_parent_info(wf_dwc_p, 3) %>%
+    add_parent_info(wf_dwc_p, 4) %>%
+    add_parent_info(wf_dwc_p, 5) %>%
+    add_parent_info(wf_dwc_p, 6) %>%
+    add_parent_info(wf_dwc_p, 7) %>%  
+    # done when there are no more names to add
+    # for species, should be done after adding 6 levels.
+    # confirm that 7th doesn't add new information.
+    verify(!all(is.na(parent_6_name))) %>%
+    verify(all(is.na(parent_7_name))) %>%
+    select(-contains("_7_")) %>%
+    # start pivoting wider
+    pivot_higher_tax(parent_6_rank, parent_6_name) %>%
+    rename(order = `.order`) %>%
+    pivot_higher_tax(parent_5_rank, parent_5_name) %>%
+    rename(family = `.family`) %>%
+  # continue to pivot wider and combine duplicated col names
+    combine_columns("order") %>%
+    pivot_higher_tax(parent_4_rank, parent_4_name) %>%
+    rename(subfamily = `.subfamily`) %>%
+    combine_columns("order") %>%
+    combine_columns("family") %>%
+    pivot_higher_tax(parent_3_rank, parent_3_name) %>%
+    rename(tribe = `.tribe`) %>%
+    combine_columns("order") %>%
+    combine_columns("family") %>%
+    combine_columns("subfamily") %>%
+    pivot_higher_tax(parent_2_rank, parent_2_name) %>%
+    rename(genus = `.genus`) %>%
+    combine_columns("order") %>%
+    combine_columns("family") %>%
+    combine_columns("subfamily") %>%
+    combine_columns("tribe") %>%
+    pivot_higher_tax(parent_1_rank, parent_1_name) %>%
+    rename(species = `.species`) %>%
+    combine_columns("order") %>%
+    combine_columns("family") %>%
+    combine_columns("subfamily") %>%
+    combine_columns("tribe") %>%
+    combine_columns("genus") %>%
+    select(-species) %>%
+    # Fill in own columns (genus for genus, etc)
+    fill_higher_taxon("order") %>%
+    fill_higher_taxon("family") %>%
+    fill_higher_taxon("subfamily") %>%
+    fill_higher_taxon("tribe") %>%
+    fill_higher_taxon("genus") %>%
+    select(taxonID, genus, tribe, subfamily, family, order)
+
+  syns_with_higher_taxa <-
+    wf_dwc %>%
+    filter(taxonomicStatus != "accepted") %>%
+    left_join(
+      accepted_with_higher_taxa,
+      join_by(acceptedNameUsageID == taxonID),
+      relationship = "many-to-one"
+    ) %>%
+    select(taxonID, genus, tribe, subfamily, family, order)
+
+  higher_taxa <-
+    bind_rows(
+      accepted_with_higher_taxa,
+      syns_with_higher_taxa
+    ) %>%
+    select(taxonID, genus, tribe, subfamily, family, order) %>%
+    # drop author
+    pivot_longer(names_to = "rank", values_to = "taxon", -taxonID) %>%
+    mutate(taxon = genus_from_sp(taxon)) %>%
+    pivot_wider(names_from = "rank", values_from = "taxon")
+    
+  wf_dwc %>%
+    left_join(higher_taxa, join_by(taxonID), relationship = "one-to-one")
+}
