@@ -18,14 +18,14 @@ source(here::here("R/packages.R"))
 source(here::here("R/functions.R"))
 conflicted::conflict_prefer("filter", "dplyr")
 
-# Load DWC data according to tax_level parameter
-if (params$tax_level == "species") {
-  wf_dwc <- tar_read(wf_dwc)
-} else if (params$tax_level == "genus") {
-  wf_dwc <- tar_read(wf_dwc_gen)
-} else {
-  stop("Markdown parameter 'tax_level' must be 'species' or 'genus'")
-}
+dwctaxon::dct_options(
+      # - won't error on duplicated sci names
+      check_sci_name = FALSE,
+      valid_tax_status = "accepted, synonym, ambiguous synonym, variant",
+      skip_missing_cols = TRUE,
+      extra_cols = c(
+        "ipniURL", "tribe", "modified", "modifiedBy", "modifiedByID")
+    )
 ```
 
 ```{r}

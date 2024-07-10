@@ -77,10 +77,19 @@ tar_plan(
   tar_file(
     wf_dwc_csv,
     write_csv_tar(
-      # Parse HTML expressions back into plain text first
-      unescape_html_df(wf_dwc) %>%
-        select(-order_rank, -higher_tax, -sort_order),
-      "_targets/user/results/ppg_sp.csv"
-    )
+) |>
+  tar_hook_before(
+    hook = conflicted::conflict_prefer("filter", "dplyr"),
+    names = everything()
+  ) |>
+  tar_hook_before(
+    hook = dwctaxon::dct_options(
+      # - won't error on duplicated sci names
+      check_sci_name = FALSE,
+      valid_tax_status = "accepted, synonym, ambiguous synonym, variant",
+      skip_missing_cols = TRUE,
+      extra_cols = c(
+        "ipniURL", "tribe", "modified", "modifiedBy", "modifiedByID")
+    ),
+    names = everything()
   )
-)
