@@ -595,6 +595,16 @@ clean_wf <- function(wf_with_syn, wf_syns, rank_by_num, wf_dwc_no_parentage) {
     count(taxonRank) %>%
     verify(.$taxonRank == "order", success_fun = success_logical)
   
+  # Drop some bad taxa
+  # names that are listed as both 'accepted' and 'synonym'
+  # MH has verified that synonyms are OK to drop
+  wf_dwc %>%
+   filter(!(scientificName == "Hypodematiaceae Ching" & taxonomicStatus == "synonym")) %>%
+   filter(!(scientificName == "Acrostichum L." & taxonomicStatus == "synonym")) %>%
+   filter(!(scientificName == "Lomariopsis Fée" & taxonomicStatus == "synonym")) %>%
+    # Arrange by sciname
+    arrange(scientificName)
+}
 
 digest_any <- function(...) {
   digest::digest(c(...))
