@@ -44,14 +44,19 @@ tar_plan(
   # - Replace World Ferns author names and publications with IPNI data
   # when available (final PPG dataframe)
   ppg = make_ppg(wf_dwc_auth_orig, ipni_results_summary),
+
+  # - Data frame at genus and higher
+  ppg_gen = filter_to_genus(ppg),
+
   # Produce report ----
+
   tar_quarto_rep(
     wf_report,
     "reports/ppg.Qmd",
     execute_params = tibble(
       tax_level = c("species", "genus"),
       output_file = c(
-        "_targets/user/results/ppg_sp.md", "_targets/user/results/ppg.md")
+        "_targets/user/results/ppg.md", "_targets/user/results/ppg_gen.md")
     ),
     quiet = FALSE,
     packages = c("gluedown", "glue", "tidyverse", "assertr")
@@ -61,21 +66,24 @@ tar_plan(
   # The newly approved taxa are appended to the beginning of the data
   # as `new_taxon` and `new_rank`. If the rest of the columns are `NA`,
   # it indicates that these taxa may not be in the WF data.
-  name_check = check_new_taxa(wf_dwc_gen),
+  name_check = check_new_taxa(ppg_gen),
+
   # Produce CSV file ---
   # - Data frame at genus and higher, sorted by rank
   tar_file(
-    wf_dwc_gen_csv,
+    ppg_gen_csv,
     write_csv_tar(
-      # Parse HTML expressions back into plain text first
-      unescape_html_df(wf_dwc_gen) %>%
-        select(-order_rank, -higher_tax, -sort_order),
-      "_targets/user/results/ppg.csv"
+      ppg_gen,
+      "_targets/user/results/ppg_gen.csv"
     )
   ),
   tar_file(
-    wf_dwc_csv,
+    ppg_csv,
     write_csv_tar(
+      ppg,
+      "_targets/user/results/ppg.csv"
+    )
+  )
 ) |>
   tar_hook_before(
     hook = conflicted::conflict_prefer("filter", "dplyr"),

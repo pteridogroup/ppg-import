@@ -18,6 +18,9 @@ source(here::here("R/packages.R"))
 source(here::here("R/functions.R"))
 conflicted::conflict_prefer("filter", "dplyr")
 
+tar_load(ppg)
+tar_load(rank_by_num)
+
 dwctaxon::dct_options(
       # - won't error on duplicated sci names
       check_sci_name = FALSE,
@@ -38,14 +41,31 @@ dwctaxon::dct_options(
 # %taxon_remarks
 # synonyms 
 
+ppg <- join_higher_taxa(ppg) %>% 
+  select(-matches("ipni|modified"))
+
+# Load DWC data according to tax_level parameter
+if (params$tax_level == "species") {
+  invisible()
+} else if (params$tax_level == "genus") {
+  ppg <- filter_to_genus(ppg)
+} else {
+  stop("Markdown parameter 'tax_level' must be 'species' or 'genus'")
+}
+
+# Sort data for writing out taxonomic treatment
+ppg <- 
+  ppg %>%
+  sort_wf_dwc(rank_by_num)
+
 # Need to add spacers between each accepted name
 spacers <-
-  wf_dwc %>%
+  ppg %>%
   filter(taxonomicStatus == "accepted") %>%
   transmute(taxonID, spacer = TRUE, sort_order = sort_order - 0.5)
 
 headers <-
-  wf_dwc %>%
+  ppg %>%
   filter(taxonomicStatus == "accepted") %>%
   mutate(name_txt = glue("{scientificName} \\-\\- {namePublishedIn}")) %>%
   mutate(
@@ -61,14 +81,14 @@ headers <-
   ) %>%
   select(taxonID, header, sort_order)
 
-remarks <- wf_dwc %>%
+remarks <- ppg %>%
     filter(taxonomicStatus == "accepted", !is.na(taxonRemarks)) %>%
     transmute(
       taxonID,
       note_txt = md_hardline(taxonRemarks), sort_order = sort_order + 0.1)
 
 syns <-
-  wf_dwc %>%
+  ppg %>%
   filter(taxonomicStatus == "synonym") %>%
   mutate(
     syn_txt = glue::glue("= {scientificName} \\-\\- {namePublishedIn}")) %>%
@@ -77,7 +97,7 @@ syns <-
   summarize(syn_txt = list(syn_txt)) %>%
   mutate(syn_txt = map(syn_txt, md_hardline)) %>%
   left_join(
-    select(wf_dwc, taxonID, sort_order),
+    select(ppg, taxonID, sort_order),
     by = "taxonID"
   ) %>%
   mutate(
@@ -85,7 +105,7 @@ syns <-
     sort_order = sort_order + 0.2) %>%
   arrange(sort_order)
 
-acc_tax_id <- wf_dwc %>%
+acc_tax_id <- ppg %>%
   filter(taxonomicStatus == "accepted") %>%
   pull(taxonID)
 
