@@ -754,7 +754,8 @@ unescape_html <- function(str) {
   unescape_html_single <- function(str){
     xml2::xml_text(xml2::read_html(paste0("<x>", str, "</x>")))
   }
-  purrr::map_chr(str, unescape_html_single)
+  purrr::map_chr(str, unescape_html_single) %>%
+    dplyr::na_if("NA")
 }
 
 #' Parse HTML expressions back into plain text for an entire dataframe
