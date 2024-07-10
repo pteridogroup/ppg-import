@@ -34,7 +34,6 @@ load_raw_wf <- function(path) {
   fill(number, .direction = "down") %>%
   rename(
     scientificName = name,
-    vernacularName = trivial_name,
     taxonRank = taxon,
     namePublishedIn = literature,
     taxonRemarks = remarks
