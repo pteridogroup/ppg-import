@@ -142,6 +142,7 @@ split_out_syns <- function(wf_with_syn) {
 }
 
 remove_parentage <- function(wf_with_syn, wf_syns) {
+
   # Combine accepted and synonyms
   # - doesn't incldue parentage mapping yet
   wf_with_syn %>%
@@ -152,25 +153,27 @@ remove_parentage <- function(wf_with_syn, wf_syns) {
       select(any_of(dct_terms$term)) %>%
       dct_validate()
 }
+
 get_rank_by_num <- function(wf_with_syn, wf_syns, wf_dwc_no_parentage) {
+
   wf_with_syn %>%
-  select(number, taxonID) %>%
-  left_join(
-    select(wf_dwc_no_parentage, taxonID, scientificName, taxonRank),
-    by = "taxonID"
-  ) %>%
-  tidyr::extract(number, "major_num", "(\\d{3})\\.", remove = FALSE) %>%
-  mutate(major_num = parse_number(major_num)) %>%
-  tidyr::extract(number, "minor_num", "\\.(\\d+)", remove = FALSE) %>%
-  mutate(
-    minor_num = parse_number(minor_num),
-    taxonomicStatus = "accepted"
-  )
+    select(number, taxonID) %>%
+    left_join(
+      select(wf_dwc_no_parentage, taxonID, scientificName, taxonRank),
+      by = "taxonID"
+    ) %>%
+    tidyr::extract(number, "major_num", "(\\d{3})\\.", remove = FALSE) %>%
+    mutate(major_num = parse_number(major_num)) %>%
+    tidyr::extract(number, "minor_num", "\\.(\\d+)", remove = FALSE) %>%
+    mutate(
+      minor_num = parse_number(minor_num),
+      taxonomicStatus = "accepted"
+    )
 
 }
 
 clean_wf <- function(wf_with_syn, wf_syns, rank_by_num, wf_dwc_no_parentage) {
-    
+
   # Split out each high-level taxon and parse the number system
   order_by_num <- filter(rank_by_num, taxonRank == "order") %>%
     arrange(number) %>%
