@@ -42,38 +42,94 @@ load_raw_wf <- function(path) {
   assert(is_uniq, scientificName, taxonID)
 }
 
+get_last_infrasp_marker <- function(names) {
+  str_match_all(names, " var\\. | f\\. | ssp\\.| subvar\\. ") %>%
+    map_chr(last) %>%
+    str_squish()
+}
+
 split_out_syns <- function(wf_with_syn) {
-  wf_with_syn %>%
-  filter(!is.na(synonyms)) %>%
-  select(taxonRank, number, acceptedNameUsageID = taxonID, synonyms) %>%
-  separate_rows(synonyms, sep = "=") %>%
-  filter(!synonyms == "") %>%
-  mutate(synonyms = str_squish(synonyms)) %>%
-  separate(
-    synonyms,
-    c("scientificName", "namePublishedIn"),
-    sep = "\\[",
-    remove = TRUE,
-    extra = "merge",
-    fill = "right") %>%
-  mutate(
-    scientificName = str_squish(scientificName),
-    namePublishedIn = str_remove_all(namePublishedIn, "\\]$"),
-  ) %>%
-  unique() %>%
-  mutate(
-    taxonID = make_taxon_id(
-      ., acceptedNameUsageID, scientificName, namePublishedIn)
-  ) %>%
-  add_count(scientificName) %>%
-  mutate(
-    taxonomicStatus = case_when(
-      n == 1 ~ "synonym",
-      n > 1 ~ "ambiguous synonym"
+
+  # Split up synonyms from multiple per row to one per row
+  wf_syn_split <- wf_with_syn %>%
+    filter(!is.na(synonyms)) %>%
+    select(number, acceptedNameUsageID = taxonID, synonyms) %>%
+    separate_rows(synonyms, sep = "=") %>%
+    filter(!synonyms == "") %>%
+    mutate(synonyms = str_squish(synonyms)) %>%
+    separate(
+      synonyms,
+      c("scientificName", "namePublishedIn"),
+      sep = "\\[",
+      remove = TRUE,
+      extra = "merge",
+      fill = "right") %>%
+    mutate(
+      scientificName = str_squish(scientificName),
+      namePublishedIn = str_remove_all(namePublishedIn, "\\]$"),
+    ) %>%
+    unique() %>%
+    mutate(
+      taxonID = make_taxon_id(
+        ., acceptedNameUsageID, scientificName, namePublishedIn)
+    ) %>%
+    add_count(scientificName) %>%
+    mutate(
+      taxonomicStatus = case_when(
+        n == 1 ~ "synonym",
+        n > 1 ~ "ambiguous synonym"
+      )
+    ) %>%
+    select(-n) %>%
+    assert(is_uniq, taxonID)
+
+  # Parse names to help identify rank
+  names_parsed <- 
+    wf_syn_split %>%
+    parse_pterido_names() %>%
+    select(scientificName = verbatim, taxon) %>%
+    unique() %>%
+    assert(is_uniq, scientificName) %>%
+    assert(not_na, scientificName)
+
+  # Taxon rank is unknown for synonyms in World Ferns data.
+  # Try to ascertain here by number of spaces in taxon name (no author)
+  # and presence of 'var.', 'f.', and 'ssp.'
+  wf_syn_split %>%
+    left_join(
+      names_parsed,
+      by = join_by(scientificName),
+      relationship = "many-to-one") %>%
+    assert(not_na, taxon) %>%
+    assert(is_uniq, taxonID) %>%
+    assert(not_na, taxonID) %>%
+    mutate(n_spaces = str_count(taxon, " ")) %>%
+    mutate(last_infra = get_last_infrasp_marker(scientificName)) %>%
+    mutate(taxonRank = case_when(
+      n_spaces == 0 & str_detect(taxon, "phyta$") ~ "division",
+      n_spaces == 0 & str_detect(taxon, "phytina$") ~ "subdivision",
+      n_spaces == 0 & str_detect(taxon, "opsida$") ~ "class",
+      n_spaces == 0 & str_detect(taxon, "idae$") ~ "subclass",
+      n_spaces == 0 & str_detect(taxon, "ales$") ~ "order",
+      n_spaces == 0 & str_detect(taxon, "ineae$") ~ "suborder",
+      n_spaces == 0 & str_detect(taxon, "aceae$") ~ "family",
+      n_spaces == 0 & str_detect(taxon, "oideae$") ~ "subfamily",
+      n_spaces == 0 & str_detect(taxon, "eae$") ~ "tribe",
+      n_spaces == 0 & str_detect(taxon, "inae$") ~ "subtribe",
+      last_infra == "var." ~ "variety",
+      last_infra == "f." ~ "form",
+      last_infra == "ssp." ~ "subspecies",
+      last_infra == "subvar." ~ "subvariety",
+      n_spaces == 1 ~ "species",
+      # avoid detecting xAsplenosorus x boydstoniae K. S. Walter as genus
+      #   parses to Asplenosorus
+      n_spaces == 0 & str_detect(scientificName, "^[A-Z][a-z]") ~ "genus",
+      .default = NA_character_
+    )) %>%
+    select(
+      taxonRank, number, acceptedNameUsageID, scientificName,
+      namePublishedIn, taxonID, taxonomicStatus
     )
-  ) %>%
-  select(-n) %>%
-  assert(is_uniq, taxonID)
 }
 
 remove_parentage <- function(wf_with_syn, wf_syns) {
