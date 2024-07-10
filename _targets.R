@@ -2,9 +2,8 @@
 source("R/packages.R")
 source("R/functions.R")
 
-tar_option_set(
-  packages = c("dwctaxon"),
-  imports = c("dwctaxon")
+targets::tar_option_set(
+  controller = crew_controller_local(workers = 10)
 )
 
 # Note that dwctatxon options are set in .Rprofile
