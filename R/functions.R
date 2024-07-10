@@ -11,8 +11,10 @@ load_raw_wf <- function(path) {
   ) %>%
   janitor::clean_names() %>%
   janitor::remove_empty("cols") %>%
-  # Delete non-DWC columns
-  select(-photo, -orientation, -author) %>%
+  # Delete non-DWC columns, drop vernacular name
+  select(
+    -photo, -orientation, -author, -trivial_name,
+    -conservation_status, -distribution) %>%
   # convert taxonRank to full name
   mutate(taxon = case_when(
     taxon == "O" ~ "order",
