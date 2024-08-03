@@ -670,6 +670,7 @@ clean_wf <- function(wf_with_syn, wf_syns, rank_by_num, wf_dwc_no_parentage) {
    filter(!(scientificName == "Hypodematiaceae Ching" & taxonomicStatus == "synonym")) %>%
    filter(!(scientificName == "Acrostichum L." & taxonomicStatus == "synonym")) %>%
    filter(!(scientificName == "Lomariopsis Fée" & taxonomicStatus == "synonym")) %>%
+   filter(!(scientificName == "Hymenophylloideae Burnett" & taxonomicStatus == "synonym")) %>%
     # Arrange by sciname
     arrange(scientificName)
 }
