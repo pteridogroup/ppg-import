@@ -1,3 +1,5 @@
+options(renv.config.pak.enabled = TRUE)
+
 source("renv/activate.R")
 # Also source user-level R profile
 if (file.exists("~/.Rprofile")) {
