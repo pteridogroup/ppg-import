@@ -795,8 +795,7 @@
       "RemotePkgRef": "glue",
       "RemoteRef": "glue",
       "RemoteRepos": "https://cran.r-project.org",
-      "RemoteReposName": "CRAN",
-      "RemotePkgPlatform": "x86_64-apple-darwin20",
+      "RemotePkgPlatform": "aarch64-apple-darwin20",
       "RemoteSha": "1.7.0",
       "Hash": "e0b3a53876554bd45879e596cdb10a52",
       "Requirements": []
@@ -1196,8 +1195,7 @@
       "RemotePkgRef": "lifecycle",
       "RemoteRef": "lifecycle",
       "RemoteRepos": "https://cran.r-project.org",
-      "RemoteReposName": "CRAN",
-      "RemotePkgPlatform": "x86_64-apple-darwin20",
+      "RemotePkgPlatform": "aarch64-apple-darwin20",
       "RemoteSha": "1.0.4",
       "Hash": "b8552d117e1b808b09a832f589b79035",
       "Requirements": [
@@ -1350,11 +1348,12 @@
       "Package": "openssl",
       "Version": "2.2.0",
       "Source": "Repository",
-      "Repository": "https://carpentries.r-universe.dev",
+      "Repository": "CRAN",
+      "RemoteType": "repository",
       "RemoteUrl": "https://github.com/jeroen/openssl",
       "RemoteRef": "v2.2.0",
       "RemoteSha": "dbd2c9502f380d60b80c769140a7be88dd0cefb8",
-      "Hash": "2bcca3848e4734eb3b16103bc9aa4b8e",
+      "Hash": "c1381bf9163fa719c6ebfa2b244d4041",
       "Requirements": [
         "askpass"
       ]
@@ -1524,11 +1523,12 @@
       "Package": "ragg",
       "Version": "1.3.2",
       "Source": "Repository",
-      "Repository": "https://carpentries.r-universe.dev",
+      "Repository": "CRAN",
+      "RemoteType": "repository",
       "RemoteUrl": "https://github.com/r-lib/ragg",
       "RemoteRef": "v1.3.2",
       "RemoteSha": "08fb1af8e18cb097603a40cea1b5974f21a6ab88",
-      "Hash": "e3087db406e079a8a2fd87f413918ed3",
+      "Hash": "4918167df4059b2842d31e4e47cf9f35",
       "Requirements": [
         "systemfonts",
         "textshaping"
@@ -1912,10 +1912,13 @@
       "Package": "systemfonts",
       "Version": "1.1.0",
       "Source": "Repository",
-      "Repository": "https://carpentries.r-universe.dev",
-      "RemoteUrl": "https://github.com/r-lib/systemfonts",
-      "RemoteRef": "v1.1.0",
-      "RemoteSha": "78df90ca6d869feeb6a40c88f72269093505aa22",
+      "Repository": "CRAN",
+      "RemoteType": "standard",
+      "RemotePkgRef": "systemfonts",
+      "RemoteRef": "systemfonts",
+      "RemoteRepos": "https://cran.r-project.org",
+      "RemotePkgPlatform": "aarch64-apple-darwin20",
+      "RemoteSha": "1.1.0",
       "Hash": "213b6b8ed5afbf934843e6c3b090d418",
       "Requirements": [
         "cpp11",
