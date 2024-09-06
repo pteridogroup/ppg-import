@@ -1058,6 +1058,18 @@ make_ppg <- function(wf_dwc_auth_orig, ipni_results_summary) {
       match_to = "taxonID",
       match_from = "parentNameUsageID"
     ) %>%
+    # WFO does not want parent taxa for synonyms, so remove these
+    # matches both normal synonyms and ambiguous synonyms
+    mutate(
+      parentNameUsage = case_when(
+        stringr::str_detect(taxonomicStatus, "synonym") ~ NA_character_,
+        .default = parentNameUsage
+      ),
+      parentNameUsageID = case_when(
+        stringr::str_detect(taxonomicStatus, "synonym") ~ NA_character_,
+        .default = parentNameUsageID
+      )
+    ) %>%
     select(
       taxonID,
       scientificName,
