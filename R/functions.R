@@ -1058,11 +1058,6 @@ make_ppg <- function(wf_dwc_auth_orig, ipni_results_summary) {
       match_to = "taxonID",
       match_from = "parentNameUsageID"
     ) %>%
-    mutate(
-      modified = NA_character_,
-      modifiedBy = NA_character_,
-      modifiedByID = NA_character_
-    ) %>%
     select(
       taxonID,
       scientificName,
@@ -1074,16 +1069,12 @@ make_ppg <- function(wf_dwc_auth_orig, ipni_results_summary) {
       parentNameUsageID,
       namePublishedIn,
       taxonRemarks,
-      ipniURL,
-      modified,
-      modifiedBy,
-      modifiedByID
+      ipniURL
     ) %>%
     # Set final order by sci name, break ties on taxonID
     arrange(scientificName, taxonID) %>%
     dwctaxon::dct_validate(
-      extra_cols = c(
-        "ipniURL", "tribe", "modified", "modifiedBy", "modifiedByID")
+      extra_cols = "ipniURL"
     )
 }
 
