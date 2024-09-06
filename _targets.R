@@ -74,14 +74,16 @@ tar_plan(
     ppg_gen_csv,
     write_csv_tar(
       ppg_gen,
-      "_targets/user/results/ppg_gen.csv"
+      "_targets/user/results/ppg_gen.csv",
+      na = ""
     )
   ),
   tar_file(
     ppg_csv,
     write_csv_tar(
       ppg,
-      "_targets/user/results/ppg.csv"
+      "_targets/user/results/ppg.csv",
+      na = ""
     )
   )
 ) |>
