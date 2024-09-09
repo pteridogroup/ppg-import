@@ -58,6 +58,23 @@ ppg <-
   ppg %>%
   sort_wf_dwc(rank_by_num)
 
+# Format genera to be italics
+genus_and_lower <- c("genus", "species", "variety", "subvariety", "form", "subspecies", "subvariety")
+
+ppg <-
+  ppg |>
+  mutate(
+    scientificName = case_when(
+      # Italicize first part of name for genus and below if not nothotaxon
+      taxonRank %in% genus_and_lower & !str_detect(scientificName, "^× ") ~
+        str_replace(scientificName, "^(\\w+)", "*\\1*"),
+      # Italicize part after × for nothotaxa
+      str_detect(scientificName, "^× ") ~
+        str_replace(scientificName, "^× (\\w+)", "× *\\1*"),
+      .default = scientificName
+    )
+  ) 
+
 # Need to add spacers between each accepted name
 spacers <-
   ppg %>%
