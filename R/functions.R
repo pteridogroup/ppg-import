@@ -1242,3 +1242,15 @@ join_higher_taxa <- function(wf_dwc) {
   wf_dwc %>%
     left_join(higher_taxa, join_by(taxonID), relationship = "one-to-one")
 }
+
+# Remove duplicate names as specified by M. Hassler
+remove_dups <- function(wf_dwc_auth_orig_with_dups, dups_exclude_raw) {
+  dups_exclude <-
+    dups_exclude_raw |>
+    janitor::clean_names() |>
+    select(taxonID = taxon_id, comments_mh) |>
+    filter(str_detect(comments_mh, "delete"))
+
+  wf_dwc_auth_orig_with_dups |>
+    anti_join(dups_exclude, by = "taxonID")
+}

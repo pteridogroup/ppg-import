@@ -24,8 +24,19 @@ tar_plan(
   rank_by_num = get_rank_by_num(wf_with_syn, wf_syns, wf_dwc_no_parentage),
   # - Cleanup into dwctaxon format. Still with original author names from WF.
   #   Data frame at species level, sorted by scientificName
-  wf_dwc_auth_orig = clean_wf(
+  wf_dwc_auth_orig_with_dups = clean_wf(
     wf_with_syn, wf_syns, rank_by_num, wf_dwc_no_parentage),
+  # - Load manually curated list of duplicate names
+  tar_file_read(
+    dups_exclude_raw,
+    "_targets/user/data_raw/Duplicates_fromPPG_rev_MHa.xlsx",
+    readxl::read_xlsx(!!.x)
+  ),
+  # Remove duplicates
+  wf_dwc_auth_orig = remove_dups(
+    wf_dwc_auth_orig_with_dups,
+    dups_exclude_raw
+  ),
 
   # Lookup author names in IPNI ----
   tar_group_size(
