@@ -52,7 +52,7 @@ load_raw_wf <- function(path) {
 }
 
 get_last_infrasp_marker <- function(names) {
-  str_match_all(names, " var\\. | f\\. | ssp\\.| subvar\\. ") %>%
+  str_match_all(names, " var\\. | f\\. | ssp\\.| subvar\\. | monstr\\. ") %>%
     map_chr(last) %>%
     str_squish()
 }
@@ -129,6 +129,7 @@ split_out_syns <- function(wf_with_syn) {
       last_infra == "f." ~ "form",
       last_infra == "ssp." ~ "subspecies",
       last_infra == "subvar." ~ "subvariety",
+      last_infra == "monstr." ~ "monstrosity",
       n_spaces == 1 ~ "species",
       # avoid detecting xAsplenosorus x boydstoniae K. S. Walter as genus
       #   parses to Asplenosorus
