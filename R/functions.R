@@ -337,6 +337,10 @@ clean_wf <- function(wf_with_syn, wf_syns, rank_by_num, wf_dwc_no_parentage) {
       genericName = genus_from_sp(scientificName),
       specificEpithet = epithet_from_sp(scientificName)
       ) %>%
+    # Have a handful that are homonyms. exclude these.
+    add_count(genericName, specificEpithet) %>%
+    filter(n == 1) %>%
+    select(-n) %>%
     # need to match on genus + epithet, so make sure that combination is unique
     assert_rows(col_concat, is_uniq, genericName, specificEpithet)
   
