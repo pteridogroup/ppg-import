@@ -25,7 +25,11 @@ tar_plan(
   # - Cleanup into dwctaxon format. Still with original author names from WF.
   #   Data frame at species level, sorted by scientificName
   wf_dwc_auth_orig_with_dups = clean_wf(
-    wf_with_syn, wf_syns, rank_by_num, wf_dwc_no_parentage),
+    wf_with_syn,
+    wf_syns,
+    rank_by_num,
+    wf_dwc_no_parentage
+  ),
   # - Load manually curated list of duplicate names
   tar_file_read(
     dups_exclude_raw,
@@ -50,7 +54,10 @@ tar_plan(
     pattern = map(ipni_query)
   ),
   ipni_results_summary = summarize_ipni_results(
-    wf_dwc_auth_orig, ipni_query, ipni_results),
+    wf_dwc_auth_orig,
+    ipni_query,
+    ipni_results
+  ),
 
   # - Replace World Ferns author names and publications with IPNI data
   # when available (final PPG dataframe)
@@ -67,7 +74,9 @@ tar_plan(
     execute_params = tibble(
       tax_level = c("species", "genus"),
       output_file = c(
-        "_targets/user/results/ppg.md", "_targets/user/results/ppg_gen.md")
+        "_targets/user/results/ppg.md",
+        "_targets/user/results/ppg_gen.md"
+      )
     ),
     quiet = FALSE,
     packages = c("gluedown", "glue", "tidyverse", "assertr")
@@ -109,7 +118,12 @@ tar_plan(
       valid_tax_status = "accepted, synonym, ambiguous synonym, variant",
       skip_missing_cols = TRUE,
       extra_cols = c(
-        "ipniURL", "tribe", "modified", "modifiedBy", "modifiedByID")
+        "ipniURL",
+        "tribe",
+        "modified",
+        "modifiedBy",
+        "modifiedByID"
+      )
     ),
     names = everything()
   )
