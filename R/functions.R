@@ -1127,7 +1127,7 @@ summarize_ipni_results <- function(wf_dwc_auth_orig, ipni_query, ipni_results) {
 }
 
 # Convert the author names in World Ferns data to those matched from IPNI
-make_ppg <- function(wf_dwc_auth_orig, ipni_results_summary) {
+convert_to_ipni_names <- function(wf_dwc_auth_orig, ipni_results_summary) {
   wf_dwc_auth_orig <- wf_dwc_auth_orig %>%
     select(
       -genus,

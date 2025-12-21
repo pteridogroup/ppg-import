@@ -13,7 +13,7 @@ tar_plan(
   # - World Ferns data including synonyms
   tar_file_read(
     wf_with_syn,
-    "_targets/user/data_raw/WorldFerns_ver_25-06.csv",
+    "_targets/user/data_raw/WorldFerns_ver_25-12.csv",
     load_raw_wf(path = !!.x)
   ),
   # - Split out only the synonyms
@@ -60,49 +60,15 @@ tar_plan(
   ),
 
   # - Replace World Ferns author names and publications with IPNI data
-  # when available (final PPG dataframe)
-  ppg = make_ppg(wf_dwc_auth_orig, ipni_results_summary),
-
-  # - Data frame at genus and higher
-  ppg_gen = filter_to_genus(ppg),
-
-  # Produce report ----
-
-  tar_quarto_rep(
-    wf_report,
-    "reports/ppg.Qmd",
-    execute_params = tibble(
-      tax_level = c("species", "genus"),
-      output_file = c(
-        "_targets/user/results/ppg.md",
-        "_targets/user/results/ppg_gen.md"
-      )
-    ),
-    quiet = FALSE,
-    packages = c("gluedown", "glue", "tidyverse", "assertr")
-  ),
-  # Check the status of newly approved taxa in World Ferns ---
-  #
-  # The newly approved taxa are appended to the beginning of the data
-  # as `new_taxon` and `new_rank`. If the rest of the columns are `NA`,
-  # it indicates that these taxa may not be in the WF data.
-  name_check = check_new_taxa(ppg_gen),
+  # when available
+  wf_dwc = convert_to_ipni_names(wf_dwc_auth_orig, ipni_results_summary),
 
   # Produce CSV file ---
-  # - Data frame at genus and higher, sorted by rank
   tar_file(
-    ppg_gen_csv,
+    wf_dwc_csv,
     write_csv_tar(
-      ppg_gen,
-      "_targets/user/results/ppg_gen.csv",
-      na = ""
-    )
-  ),
-  tar_file(
-    ppg_csv,
-    write_csv_tar(
-      ppg,
-      "_targets/user/results/ppg.csv",
+      wf_dwc,
+      "_targets/user/results/wf_dwc.csv",
       na = ""
     )
   )
