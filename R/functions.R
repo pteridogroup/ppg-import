@@ -1369,3 +1369,24 @@ remove_dups <- function(wf_dwc_auth_orig_with_dups, dups_exclude_raw) {
   wf_dwc_auth_orig_with_dups |>
     anti_join(dups_exclude, by = "taxonID")
 }
+
+#' Convert author names to IPNI format
+#'
+#' Removes spaces between abbreviated parts of author names to conform to
+#' IPNI formatting rules. For example, converts "R. Br." to "R.Br.".
+#'
+#' @param name Character vector of scientific names with author names
+#'
+#' @return Character vector with author names in IPNI format
+#'
+#' @examples
+#' convert_to_ipni_author("Actinostachys R. Br. ex Hook. & Baker")
+#' # Returns: "Actinostachys R.Br. ex Hook. & Baker"
+convert_to_ipni_author <- function(name) {
+  # Remove spaces after periods when followed by a capital letter
+  # This handles abbreviated author names like "R. Br." -> "R.Br."
+  # Uses lookbehind/lookahead to avoid overlapping match issues
+  # Pattern: period (after capital) + space(s) (before capital)
+  # Replace with just the period (removes the spaces)
+  stringr::str_replace_all(name, "(?<=[A-Z])\\.\\s+(?=[A-Z])", ".")
+}
