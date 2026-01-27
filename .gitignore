@@ -1,5 +1,6 @@
-working
+working*
 _targets
 /.quarto/
 report_files
 .DS_Store
+temp/
