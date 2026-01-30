@@ -63,6 +63,9 @@ tar_plan(
   # when available
   wf_dwc = convert_to_ipni_names(wf_dwc_auth_orig, ipni_results_summary),
 
+  # Count number of taxa at various ranks
+  wf_taxa_count = count_taxa_in_wf(wf_with_syn),
+
   # Produce CSV file ---
   tar_file(
     wf_dwc_csv,

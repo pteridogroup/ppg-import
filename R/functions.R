@@ -1390,3 +1390,60 @@ convert_to_ipni_author <- function(name) {
   # Replace with just the period (removes the spaces)
   stringr::str_replace_all(name, "(?<=[A-Z])\\.\\s+(?=[A-Z])", ".")
 }
+
+#' Count number of taxa in different ranks in the World Ferns dataset
+#' 
+#' Excludes hybrids from the count, while still counting nothogenera.
+#' Counts synonyms as the number of synonyms contained per accepted name.
+#' 
+#' @param wf_with_syn Original World Ferns data read in from TSV file
+#'
+count_taxa_in_wf <- function(wf_with_syn) {
+  ranks_to_use <- c(
+    "order",
+    "family",
+    "subfamily",
+    "tribe",
+    "genus",
+    "nothogenus",
+    "species"
+  )
+
+  wf_with_syn_ranks_fixed <-
+    wf_with_syn |>
+    mutate(
+      taxonRank = case_when(
+        str_detect(scientificName, "^x") & taxonRank == "genus" ~ "nothogenus",
+        str_detect(scientificName, " x ") &
+          taxonRank %in%
+            c("species", "variety", "subspecies", "form") ~ "hybrid",
+        .default = taxonRank
+      )
+    ) |>
+    filter(taxonRank %in% ranks_to_use) |>
+    mutate(
+      taxonRank = factor(
+        taxonRank,
+        levels = ranks_to_use
+      )
+    )
+
+  accepted_count <-
+    wf_with_syn_ranks_fixed |>
+    count(taxonRank) |>
+    rename(wf_accepted = n)
+
+  syn_count <-
+    wf_with_syn_ranks_fixed |>
+    mutate(n_syn = str_count(synonyms, "=")) |>
+    group_by(taxonRank) |>
+    summarize(
+      wf_synonym = sum(n_syn, na.rm = TRUE)
+    )
+
+  left_join(
+    accepted_count,
+    syn_count,
+    by = join_by(taxonRank)
+  )
+}
