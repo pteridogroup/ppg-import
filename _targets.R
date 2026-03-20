@@ -13,7 +13,7 @@ tar_plan(
   # - World Ferns data including synonyms
   tar_file_read(
     wf_with_syn,
-    "_targets/user/data_raw/WorldFerns_ver_25-12.csv",
+    "_targets/user/data_raw/WorldFerns_ver_26-03.csv",
     load_raw_wf(path = !!.x)
   ),
   # - Split out only the synonyms
