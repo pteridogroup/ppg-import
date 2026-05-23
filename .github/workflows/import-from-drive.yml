@@ -49,7 +49,19 @@ jobs:
           use-public-rspm: true
 
       # ------------------------------------------------------------------ #
-      # 3. Restore renv cache and packages
+      # 3. Install system dependencies required by some R packages
+      # ------------------------------------------------------------------ #
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libglpk40 \
+            libxml2-dev \
+            libcurl4-openssl-dev \
+            libssl-dev
+
+      # ------------------------------------------------------------------ #
+      # 4. Restore renv cache and packages
       # ------------------------------------------------------------------ #
       - name: Cache renv packages
         uses: actions/cache@v4
@@ -68,7 +80,7 @@ jobs:
           renv::restore(prompt = FALSE)
 
       # ------------------------------------------------------------------ #
-      # 4. Create required directories
+      # 5. Create required directories
       # ------------------------------------------------------------------ #
       - name: Create data directories
         run: |
@@ -76,7 +88,7 @@ jobs:
           mkdir -p _targets/user/results
 
       # ------------------------------------------------------------------ #
-      # 5. Download World Ferns input file from Google Drive
+      # 6. Download World Ferns input file from Google Drive
       #
       # The dispatch payload (from Apps Script) or workflow_dispatch input
       # must supply the Drive file ID. The file is saved with its original
@@ -118,7 +130,7 @@ jobs:
           fi
 
       # ------------------------------------------------------------------ #
-      # 6. Set WORLD_FERNS_INPUT (resolve_wf_input() will read this)
+      # 7. Set WORLD_FERNS_INPUT (resolve_wf_input() will read this)
       #
       # When a file was downloaded above its name is in the payload; when
       # triggered manually without a file ID we fall back to whichever
@@ -135,7 +147,7 @@ jobs:
           # file automatically - no env var needed.
 
       # ------------------------------------------------------------------ #
-      # 7. Write job summary: trigger metadata
+      # 8. Write job summary: trigger metadata
       # ------------------------------------------------------------------ #
       - name: Write trigger summary
         run: |
@@ -155,7 +167,7 @@ jobs:
             >> "$GITHUB_STEP_SUMMARY"
 
       # ------------------------------------------------------------------ #
-      # 8. Run targets pipeline
+      # 9. Run targets pipeline
       # ------------------------------------------------------------------ #
       - name: Run tar_make()
         shell: Rscript {0}
@@ -164,7 +176,7 @@ jobs:
           targets::tar_make()
 
       # ------------------------------------------------------------------ #
-      # 9. Upload wf_dwc.csv as workflow artifact
+      # 10. Upload wf_dwc.csv as workflow artifact
       #
       # The Shiny repo (or any other consumer) can download this artifact
       # via the GitHub REST API using dawidd6/action-download-artifact with
