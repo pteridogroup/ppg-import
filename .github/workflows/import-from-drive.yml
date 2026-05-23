@@ -1,0 +1,189 @@
+name: Import World Ferns from Google Drive
+
+# Triggered by Google Apps Script when a new WorldFerns file is uploaded
+# to the shared Drive folder. Also supports manual reruns.
+on:
+  repository_dispatch:
+    types: [worldferns_updated]
+  workflow_dispatch:
+    inputs:
+      file_id:
+        description: >
+          Google Drive file ID to download (leave empty to use the newest
+          WorldFerns_ver_*.csv already in the repository cache)
+        required: false
+        type: string
+
+# Prevent two runs processing the same update simultaneously.
+concurrency:
+  group: import-world-ferns
+  cancel-in-progress: false
+
+jobs:
+  run-pipeline:
+    name: Download input and run targets pipeline
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    env:
+      # renv cache path - speeds up package restoration
+      RENV_PATHS_CACHE: ~/.local/share/renv
+
+    permissions:
+      contents: read
+
+    steps:
+      # ------------------------------------------------------------------ #
+      # 1. Checkout
+      # ------------------------------------------------------------------ #
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ------------------------------------------------------------------ #
+      # 2. Set up R
+      # ------------------------------------------------------------------ #
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: "4.5.0"
+          use-public-rspm: true
+
+      # ------------------------------------------------------------------ #
+      # 3. Restore renv cache and packages
+      # ------------------------------------------------------------------ #
+      - name: Cache renv packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.RENV_PATHS_CACHE }}
+          key: renv-${{ runner.os }}-${{ hashFiles('renv.lock') }}
+          restore-keys: |
+            renv-${{ runner.os }}-
+
+      - name: Restore renv library
+        shell: Rscript {0}
+        run: |
+          if (!requireNamespace("renv", quietly = TRUE)) {
+            install.packages("renv")
+          }
+          renv::restore(prompt = FALSE)
+
+      # ------------------------------------------------------------------ #
+      # 4. Create required directories
+      # ------------------------------------------------------------------ #
+      - name: Create data directories
+        run: |
+          mkdir -p _targets/user/data_raw
+          mkdir -p _targets/user/results
+
+      # ------------------------------------------------------------------ #
+      # 5. Download World Ferns input file from Google Drive
+      #
+      # The dispatch payload (from Apps Script) or workflow_dispatch input
+      # must supply the Drive file ID. The file is saved with its original
+      # name so tar_file_read() change-detection still works correctly.
+      # ------------------------------------------------------------------ #
+      - name: Resolve Drive file ID
+        id: resolve_id
+        run: |
+          # repository_dispatch payload takes priority; fall back to
+          # workflow_dispatch input
+          FILE_ID="${{ github.event.client_payload.file_id }}"
+          if [ -z "$FILE_ID" ]; then
+            FILE_ID="${{ inputs.file_id }}"
+          fi
+          echo "file_id=$FILE_ID" >> "$GITHUB_OUTPUT"
+
+          FILE_NAME="${{ github.event.client_payload.file_name }}"
+          echo "file_name=$FILE_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Download input file from Google Drive
+        if: steps.resolve_id.outputs.file_id != ''
+        env:
+          GDRIVE_SA_KEY: ${{ secrets.GDRIVE_SA_KEY }}
+        run: |
+          # Install the Google Drive CLI (gdown) - no service account
+          # OAuth required for files shared with the service account.
+          pip install --quiet gdown
+
+          FILE_ID="${{ steps.resolve_id.outputs.file_id }}"
+          FILE_NAME="${{ steps.resolve_id.outputs.file_name }}"
+
+          # Determine output filename: use name from payload when available,
+          # otherwise let gdown infer from Drive metadata.
+          if [ -n "$FILE_NAME" ]; then
+            DEST="_targets/user/data_raw/$FILE_NAME"
+            gdown --id "$FILE_ID" --output "$DEST"
+          else
+            gdown --id "$FILE_ID" --output "_targets/user/data_raw/"
+          fi
+
+      # ------------------------------------------------------------------ #
+      # 6. Set WORLD_FERNS_INPUT (resolve_wf_input() will read this)
+      #
+      # When a file was downloaded above its name is in the payload; when
+      # triggered manually without a file ID we fall back to whichever
+      # WorldFerns_ver_*.csv is newest in the data_raw directory.
+      # ------------------------------------------------------------------ #
+      - name: Set WORLD_FERNS_INPUT environment variable
+        run: |
+          FILE_NAME="${{ steps.resolve_id.outputs.file_name }}"
+          if [ -n "$FILE_NAME" ]; then
+            echo "WORLD_FERNS_INPUT=_targets/user/data_raw/$FILE_NAME" \
+              >> "$GITHUB_ENV"
+          fi
+          # When FILE_NAME is empty, resolve_wf_input() picks the newest
+          # file automatically - no env var needed.
+
+      # ------------------------------------------------------------------ #
+      # 7. Write job summary: trigger metadata
+      # ------------------------------------------------------------------ #
+      - name: Write trigger summary
+        run: |
+          echo "## Import run" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Trigger | ${{ github.event_name }} |" \
+            >> "$GITHUB_STEP_SUMMARY"
+          echo "| Drive file ID | \
+${{ steps.resolve_id.outputs.file_id || 'n/a (using cached file)' }} |" \
+            >> "$GITHUB_STEP_SUMMARY"
+          echo "| Drive filename | \
+${{ steps.resolve_id.outputs.file_name || 'auto-resolved' }} |" \
+            >> "$GITHUB_STEP_SUMMARY"
+          echo "| Run started | $(date -u '+%Y-%m-%d %H:%M UTC') |" \
+            >> "$GITHUB_STEP_SUMMARY"
+
+      # ------------------------------------------------------------------ #
+      # 8. Run targets pipeline
+      # ------------------------------------------------------------------ #
+      - name: Run tar_make()
+        shell: Rscript {0}
+        run: |
+          source("R/packages.R")
+          targets::tar_make()
+
+      # ------------------------------------------------------------------ #
+      # 9. Upload wf_dwc.csv as workflow artifact
+      #
+      # The Shiny repo (or any other consumer) can download this artifact
+      # via the GitHub REST API using dawidd6/action-download-artifact with
+      # a PAT scoped to actions:read on this repository.
+      # ------------------------------------------------------------------ #
+      - name: Upload wf_dwc.csv artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wf-dwc-csv
+          path: _targets/user/results/wf_dwc.csv
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Upload targets run log artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: targets-meta
+          path: _targets/meta/
+          retention-days: 30
+          if-no-files-found: ignore

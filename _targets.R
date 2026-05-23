@@ -11,9 +11,11 @@ targets::tar_option_set(
 tar_plan(
   # Process World Ferns data into Darwin Core (DWC) format ----
   # - World Ferns data including synonyms
+  # - Input path resolved from WORLD_FERNS_INPUT env var; falls back to
+  #   newest WorldFerns_ver_*.csv in _targets/user/data_raw/
   tar_file_read(
     wf_with_syn,
-    "_targets/user/data_raw/WorldFerns_ver_26-05.csv",
+    resolve_wf_input(),
     load_raw_wf(path = !!.x)
   ),
   # - Split out only the synonyms

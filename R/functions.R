@@ -1,3 +1,57 @@
+#' Resolve the path to the World Ferns input file
+#'
+#' Checks the `WORLD_FERNS_INPUT` environment variable first. If unset,
+#' falls back to the newest `WorldFerns_ver_*.csv` file found under
+#' `data_dir`. Stops with a clear message when no candidate is found.
+#'
+#' @param data_dir Directory to search when env var is unset.
+#'   Defaults to `"_targets/user/data_raw"`.
+#'
+#' @return Scalar character: absolute path to the selected input file.
+resolve_wf_input <- function(
+  data_dir = "_targets/user/data_raw"
+) {
+  env_path <- Sys.getenv("WORLD_FERNS_INPUT", unset = "")
+  if (nzchar(env_path)) {
+    if (!file.exists(env_path)) {
+      stop(
+        "WORLD_FERNS_INPUT is set to '",
+        env_path,
+        "' but the file does not exist."
+      )
+    }
+    return(normalizePath(env_path))
+  }
+
+  candidates <- sort(
+    list.files(
+      data_dir,
+      pattern = "^WorldFerns_ver_.*\\.csv$",
+      full.names = TRUE
+    ),
+    decreasing = TRUE
+  )
+
+  if (length(candidates) == 0L) {
+    stop(
+      "No WorldFerns_ver_*.csv file found in '",
+      data_dir,
+      "'. ",
+      "Set WORLD_FERNS_INPUT to the file path or place the file in ",
+      "that directory."
+    )
+  }
+
+  if (length(candidates) > 1L) {
+    message(
+      "Multiple World Ferns input files found; using the newest: ",
+      basename(candidates[[1L]])
+    )
+  }
+
+  normalizePath(candidates[[1L]])
+}
+
 #' Load raw data from World Ferns
 #'
 #' @param path Path to delimited data from World Ferns.

@@ -4,3 +4,5 @@ _targets
 report_files
 .DS_Store
 temp/
+# Downloaded World Ferns input files (managed by CI, not versioned)
+_targets/user/data_raw/WorldFerns_ver_*.csv
