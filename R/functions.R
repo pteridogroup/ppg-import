@@ -1065,16 +1065,69 @@ pluck_dat <- function(ipni_res, field) {
   purrr::pluck(ipni_res, "results", 1, field, .default = NA_character_)
 }
 
-search_ipni_single <- function(taxon, ipni_filter = NULL, taxonID) {
+is_transient_ipni_error <- function(err) {
+  msg <- conditionMessage(err)
+  any(
+    stringr::str_detect(
+      msg,
+      c(
+        "failed with code 429",
+        "failed with code 500",
+        "failed with code 502",
+        "failed with code 503",
+        "failed with code 504",
+        "timed out",
+        "timeout",
+        "Connection"
+      )
+    )
+  )
+}
+
+search_ipni_single <- function(
+  taxon,
+  ipni_filter = NULL,
+  taxonID,
+  max_attempts = 5,
+  base_wait_seconds = 1
+) {
   if (is.na(ipni_filter)) {
     ipni_filter <- NULL
   }
-  suppressMessages(
-    ipni_res <- kewr::search_ipni(
-      query = taxon,
-      filters = ipni_filter
+
+  for (attempt in seq_len(max_attempts)) {
+    ipni_res <- tryCatch(
+      suppressMessages(
+        kewr::search_ipni(
+          query = taxon,
+          filters = ipni_filter
+        )
+      ),
+      error = function(err) err
     )
-  )
+
+    if (!inherits(ipni_res, "error")) {
+      break
+    }
+
+    retryable <- is_transient_ipni_error(ipni_res)
+    if (!retryable || attempt == max_attempts) {
+      stop(ipni_res)
+    }
+
+    wait_seconds <-
+      base_wait_seconds * (2^(attempt - 1)) + stats::runif(1, 0, 0.5)
+
+    message(
+      glue::glue(
+        "IPNI request failed for '{taxon}' on attempt ",
+        "{attempt}/{max_attempts}; retrying in ",
+        "{round(wait_seconds, 1)}s"
+      )
+    )
+    Sys.sleep(wait_seconds)
+  }
+
   tibble(
     taxonID = taxonID,
     name = pluck_dat(ipni_res, "name"),
@@ -1392,10 +1445,10 @@ convert_to_ipni_author <- function(name) {
 }
 
 #' Count number of taxa in different ranks in the World Ferns dataset
-#' 
+#'
 #' Excludes hybrids from the count, while still counting nothogenera.
 #' Counts synonyms as the number of synonyms contained per accepted name.
-#' 
+#'
 #' @param wf_with_syn Original World Ferns data read in from TSV file
 #'
 count_taxa_in_wf <- function(wf_with_syn) {
