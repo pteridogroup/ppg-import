@@ -146,10 +146,10 @@ jobs:
           echo "| Trigger | ${{ github.event_name }} |" \
             >> "$GITHUB_STEP_SUMMARY"
           echo "| Drive file ID | \
-${{ steps.resolve_id.outputs.file_id || 'n/a (using cached file)' }} |" \
+           ${{ steps.resolve_id.outputs.file_id || 'n/a (using cached file)' }} |" \
             >> "$GITHUB_STEP_SUMMARY"
           echo "| Drive filename | \
-${{ steps.resolve_id.outputs.file_name || 'auto-resolved' }} |" \
+           ${{ steps.resolve_id.outputs.file_name || 'auto-resolved' }} |" \
             >> "$GITHUB_STEP_SUMMARY"
           echo "| Run started | $(date -u '+%Y-%m-%d %H:%M UTC') |" \
             >> "$GITHUB_STEP_SUMMARY"
