@@ -2,8 +2,11 @@
 source("R/packages.R")
 source("R/functions.R")
 
+# Set number of workers to run in parallel differently for local vs GH actions
 targets::tar_option_set(
-  controller = crew_controller_local(workers = 10)
+  controller = crew_controller_local(
+    workers = if (nzchar(Sys.getenv("GITHUB_ACTIONS"))) 2 else 10
+  )
 )
 
 # Note that dwctatxon options are set in .Rprofile
