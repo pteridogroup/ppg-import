@@ -68,7 +68,14 @@ tar_plan(
       "_targets/user/results/wf_dwc.csv",
       na = ""
     )
-  )
+  ),
+
+  # Load PPG ---
+  # Load PPG data
+  ppg_full = load_ppg(ver = "0.0.0.9005"),
+
+  # WF vs PPG comparison ----
+  wf_ppg_genus_plus = compare_wf_ppg_genus_plus(wf_dwc, ppg_full)
 ) |>
   tar_hook_before(
     hook = conflicted::conflict_prefer("filter", "dplyr"),

@@ -1542,3 +1542,366 @@ count_taxa_in_wf <- function(wf_with_syn) {
     by = join_by(taxonRank)
   )
 }
+
+#' Download file with retry logic
+#'
+#' Downloads a file from a URL with automatic retry on failure.
+#' Uses exponential backoff between retries.
+#'
+#' @param url URL to download from
+#' @param destfile Destination file path
+#' @param max_retries Maximum number of retry attempts (default: 5)
+#' @param quiet Whether to suppress download progress messages (default: FALSE)
+#' @param ... Additional arguments passed to download.file()
+#'
+#' @return Invisible NULL on success, stops with error on failure
+#'
+download_with_retry <- function(
+  url,
+  destfile,
+  max_retries = 5,
+  quiet = FALSE,
+  ...
+) {
+  retry_count <- 0
+  wait_time <- 2
+
+  while (retry_count <= max_retries) {
+    result <- tryCatch(
+      {
+        if (retry_count > 0) {
+          message(sprintf(
+            "  Retry %d/%d downloading from %s after %.1f seconds...",
+            retry_count,
+            max_retries,
+            basename(url),
+            wait_time
+          ))
+          Sys.sleep(wait_time)
+        }
+        download.file(url, destfile, quiet = quiet, ...)
+        TRUE # success marker
+      },
+      error = function(e) {
+        if (retry_count < max_retries) {
+          message(sprintf(
+            "  Download failed: %s",
+            conditionMessage(e)
+          ))
+          FALSE # retry marker
+        } else {
+          stop(sprintf(
+            "Failed to download from %s after %d retries. Last error: %s",
+            url,
+            max_retries,
+            conditionMessage(e)
+          ))
+        }
+      }
+    )
+
+    if (result == TRUE) {
+      return(invisible(NULL)) # Success!
+    } else {
+      retry_count <- retry_count + 1
+      wait_time <- wait_time * 2 # exponential backoff
+    }
+  }
+}
+
+#' Download and load the PPG reference CSV file
+#'
+#' Downloads a specific version of the PPG reference data from GitHub,
+#' extracts the `ppg.csv` file, reads it into R as a tibble, and cleans up
+#' temporary files.
+#'
+#' @param ver Character. Version string for the PPG release to download.
+#'   Defaults to "0.0.0.9000".
+#'
+#' @return A tibble containing the contents of the `ppg.csv` file.
+#'
+#' @examples
+#' ppg_data <- load_ppg("0.0.0.9000")
+#'
+load_ppg <- function(ver = "0.0.0.9001") {
+  temp_file <- tempfile(fileext = ".zip")
+
+  temp_dir <- fs::path_dir(temp_file)
+
+  url <- glue::glue(
+    "https://github.com/pteridogroup/ppg/archive/refs/tags/v{ver}.zip"
+  )
+
+  # Download with retry logic for network issues
+  download_with_retry(url, temp_file, quiet = FALSE)
+
+  unzip(
+    temp_file,
+    files = glue::glue("ppg-{ver}/data/ppg.csv"),
+    exdir = temp_dir,
+    overwrite = TRUE,
+    junkpaths = TRUE
+  )
+
+  ppg_csv_file <- fs::path(temp_dir, "ppg.csv")
+
+  res <- readr::read_csv(ppg_csv_file, show_col_types = FALSE)
+
+  fs::file_delete(ppg_csv_file)
+  fs::file_delete(temp_file)
+
+  res
+}
+
+# WF vs PPG comparison ----
+
+#' Normalize taxonomic rank names for cross-source comparisons
+#'
+#' @param rank Character vector of Darwin Core taxon ranks
+#'
+#' @return Character vector with normalized rank names
+normalize_comp_rank <- function(rank) {
+  case_when(
+    rank == "division" ~ "phylum",
+    .default = rank
+  )
+}
+
+#' Remove authorship from taxon names used for comparison keys
+#'
+#' Keeps only the taxon part of a scientific name. For hybrid genera that
+#' start with "x" or "×", keeps the marker and following name.
+#'
+#' @param name Character vector of scientific names
+#'
+#' @return Character vector with authorship removed
+strip_name_authorship <- function(name) {
+  name <- str_squish(name)
+
+  case_when(
+    is.na(name) ~ NA_character_,
+    str_detect(name, "^(x|×)\\s+") ~ str_replace(
+      name,
+      "^((?:x|×)\\s+\\S+).*",
+      "\\1"
+    ),
+    TRUE ~ str_replace(name, "^(\\S+).*", "\\1")
+  )
+}
+
+#' Extract accepted genus-and-higher classification for one data source
+#'
+#' Builds one row per accepted taxon at genus rank and higher, with dynamic
+#' higher-rank columns for the ranks present in the input dataset.
+#'
+#' @param tax_df Dataframe in Darwin Core format
+#' @param source_suffix Character suffix used in output column names
+#' @param rank_order Rank order used for deterministic output columns
+#' @param max_depth Maximum parent traversal depth
+#'
+#' @return Tibble with columns `taxon` and rank columns suffixed by source
+extract_genus_plus_comparison <- function(
+  tax_df,
+  source_suffix,
+  rank_order = c(
+    "subtribe",
+    "tribe",
+    "subfamily",
+    "family",
+    "suborder",
+    "order",
+    "subclass",
+    "class",
+    "phylum"
+  ),
+  max_depth = 20
+) {
+  nodes <- tax_df %>%
+    filter(taxonomicStatus == "accepted") %>%
+    transmute(
+      taxonID,
+      scientificName,
+      taxonRank = normalize_comp_rank(taxonRank),
+      parentNameUsageID
+    )
+
+  keep_ranks <- c("genus", rank_order)
+
+  seeds <- nodes %>%
+    filter(taxonRank %in% keep_ranks) %>%
+    transmute(taxonID, taxon = strip_name_authorship(scientificName)) %>%
+    assert(not_na, taxonID, taxon)
+
+  frontier <- nodes %>%
+    transmute(taxonID, ancestor_id = taxonID)
+
+  lineage <- frontier
+
+  for (depth in seq_len(max_depth)) {
+    frontier <- frontier %>%
+      left_join(
+        select(nodes, ancestor_id = taxonID, parentNameUsageID),
+        by = "ancestor_id",
+        relationship = "many-to-one"
+      ) %>%
+      transmute(taxonID, ancestor_id = parentNameUsageID) %>%
+      filter(!is.na(ancestor_id))
+
+    if (nrow(frontier) == 0) {
+      break
+    }
+
+    lineage <- bind_rows(lineage, frontier)
+  }
+
+  lineage_ranked <- lineage %>%
+    left_join(
+      select(
+        nodes,
+        ancestor_id = taxonID,
+        ancestor_name = scientificName,
+        ancestor_rank = taxonRank
+      ),
+      by = "ancestor_id",
+      relationship = "many-to-one"
+    ) %>%
+    filter(ancestor_rank %in% rank_order) %>%
+    mutate(value = strip_name_authorship(ancestor_name)) %>%
+    select(taxonID, rank = ancestor_rank, value)
+
+  rank_by_taxon <- seeds %>%
+    left_join(lineage_ranked, by = "taxonID") %>%
+    filter(!is.na(rank), !is.na(value)) %>%
+    group_by(taxon, rank) %>%
+    summarize(values = list(unique(value)), .groups = "drop") %>%
+    mutate(n_values = map_int(values, length)) %>%
+    assert(in_set(1), n_values) %>%
+    mutate(value = map_chr(values, 1)) %>%
+    select(-values, -n_values)
+
+  taxon_rank <- seeds %>%
+    left_join(
+      select(nodes, taxonID, taxon_rank = taxonRank),
+      by = "taxonID",
+      relationship = "many-to-one"
+    ) %>%
+    group_by(taxon) %>%
+    summarize(ranks = list(unique(taxon_rank)), .groups = "drop") %>%
+    mutate(n_ranks = map_int(ranks, length)) %>%
+    assert(in_set(1), n_ranks) %>%
+    transmute(
+      taxon,
+      !!paste0("rank_", source_suffix) := map_chr(ranks, 1)
+    )
+
+  rank_by_taxon %>%
+    mutate(rank_col = paste0(rank, "_", source_suffix)) %>%
+    select(-rank) %>%
+    pivot_wider(names_from = rank_col, values_from = value) %>%
+    right_join(seeds, by = "taxon") %>%
+    left_join(taxon_rank, by = "taxon", relationship = "many-to-one") %>%
+    select(-taxonID) %>%
+    distinct() %>%
+    assert(is_uniq, taxon)
+}
+
+#' Compare accepted genus-and-higher taxa between WF and PPG
+#'
+#' @param wf_dwc Dataframe of World Ferns names in Darwin Core format
+#' @param ppg_full Dataframe of PPG names in Darwin Core format
+#' @param rank_order Rank order used for deterministic output columns
+#' @param wf_suffix Suffix for World Ferns columns
+#' @param ppg_suffix Suffix for PPG columns
+#'
+#' @return Tibble with one row per taxon, all available rank columns for each
+#'   source, and a `same_treatment` flag based on shared ranks only
+compare_wf_ppg_genus_plus <- function(
+  wf_dwc,
+  ppg_full,
+  rank_order = c(
+    "subtribe",
+    "tribe",
+    "subfamily",
+    "family",
+    "suborder",
+    "order",
+    "subclass",
+    "class",
+    "phylum"
+  ),
+  wf_suffix = "wf",
+  ppg_suffix = "ppg"
+) {
+  wf_comp <- extract_genus_plus_comparison(
+    tax_df = wf_dwc,
+    source_suffix = wf_suffix,
+    rank_order = rank_order
+  )
+
+  ppg_comp <- extract_genus_plus_comparison(
+    tax_df = ppg_full,
+    source_suffix = ppg_suffix,
+    rank_order = rank_order
+  )
+
+  wf_ranks <- str_remove(names(wf_comp), paste0("_", wf_suffix, "$")) %>%
+    setdiff(c("taxon", "rank"))
+  ppg_ranks <- str_remove(names(ppg_comp), paste0("_", ppg_suffix, "$")) %>%
+    setdiff(c("taxon", "rank"))
+
+  shared_ranks <- rank_order[rank_order %in% intersect(wf_ranks, ppg_ranks)]
+
+  wf_cols <- paste0(rank_order[rank_order %in% wf_ranks], "_", wf_suffix)
+  ppg_cols <- paste0(rank_order[rank_order %in% ppg_ranks], "_", ppg_suffix)
+  wf_shared_cols <- paste0(shared_ranks, "_", wf_suffix)
+  ppg_shared_cols <- paste0(shared_ranks, "_", ppg_suffix)
+
+  out <- full_join(wf_comp, ppg_comp, by = "taxon") %>%
+    select(
+      taxon,
+      any_of(c(paste0("rank_", wf_suffix), paste0("rank_", ppg_suffix))),
+      any_of(wf_cols),
+      any_of(ppg_cols)
+    )
+
+  if (length(shared_ranks) == 0) {
+    out <- mutate(out, same_treatment = NA)
+  } else {
+    out <- out %>%
+      mutate(
+        same_treatment = map_lgl(
+          seq_len(n()),
+          ~ identical(
+            as.character(unlist(
+              slice(out, .x) %>% select(any_of(wf_shared_cols))
+            )),
+            as.character(unlist(
+              slice(out, .x) %>% select(any_of(ppg_shared_cols))
+            ))
+          )
+        )
+      )
+  }
+
+  rank_wf_col <- paste0("rank_", wf_suffix)
+  rank_ppg_col <- paste0("rank_", ppg_suffix)
+
+  out <- out %>%
+    mutate(
+      rank = coalesce(.data[[rank_wf_col]], .data[[rank_ppg_col]]),
+      included_in_wf = !is.na(.data[[rank_wf_col]]),
+      included_in_ppg = !is.na(.data[[rank_ppg_col]])
+    )
+
+  out %>%
+    select(
+      taxon,
+      rank,
+      included_in_wf,
+      included_in_ppg,
+      any_of(wf_cols),
+      any_of(ppg_cols),
+      same_treatment
+    ) %>%
+    arrange(taxon)
+}
