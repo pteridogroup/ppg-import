@@ -1905,3 +1905,299 @@ compare_wf_ppg_genus_plus <- function(
     ) %>%
     arrange(taxon)
 }
+
+#' Extract species records with authorship-based comparison keys
+#'
+#' @param tax_df Dataframe in Darwin Core format
+#' @param source_name Source label, usually "wf" or "ppg"
+#'
+#' @return Tibble of species rows with parsed canonical/authorship key fields
+extract_species_for_comparison <- function(tax_df, source_name) {
+  species_rows <- tax_df %>%
+    filter(taxonRank == "species") %>%
+    {
+      if ("scientificNameAuthorship" %in% names(.)) {
+        mutate(
+          .,
+          scientificNameAuthorship = as.character(scientificNameAuthorship)
+        )
+      } else {
+        mutate(., scientificNameAuthorship = NA_character_)
+      }
+    } %>%
+    select(
+      taxonID,
+      scientificName,
+      scientificNameAuthorship,
+      taxonomicStatus,
+      acceptedNameUsageID
+    )
+
+  accepted_lookup <- species_rows %>%
+    filter(taxonomicStatus == "accepted") %>%
+    transmute(acceptedNameUsageID = taxonID, acceptedNameUsage = scientificName)
+
+  parsed <- species_rows %>%
+    select(scientificName) %>%
+    distinct() %>%
+    rename(verbatim = scientificName) %>%
+    left_join(
+      parse_pterido_names(species_rows),
+      by = "verbatim",
+      relationship = "one-to-one"
+    ) %>%
+    transmute(
+      scientificName = verbatim,
+      canonical_species = taxon,
+      authorship_parsed = coalesce(scientificNameAuthorship, "")
+    )
+
+  species_rows %>%
+    left_join(parsed, by = "scientificName", relationship = "many-to-one") %>%
+    left_join(
+      accepted_lookup,
+      by = "acceptedNameUsageID",
+      relationship = "many-to-one"
+    ) %>%
+    mutate(
+      source = source_name,
+      authorship = coalesce(scientificNameAuthorship, authorship_parsed, ""),
+      authorship = str_squish(authorship),
+      accepted_id = case_when(
+        taxonomicStatus == "accepted" ~ taxonID,
+        .default = acceptedNameUsageID
+      ),
+      accepted_name = case_when(
+        taxonomicStatus == "accepted" ~ scientificName,
+        .default = acceptedNameUsage
+      ),
+      species_key = str_squish(paste(canonical_species, authorship))
+    ) %>%
+    select(
+      source,
+      taxonID,
+      scientificName,
+      taxonomicStatus,
+      accepted_id,
+      accepted_name,
+      canonical_species,
+      authorship,
+      species_key
+    ) %>%
+    assert(not_na, taxonID, scientificName, species_key)
+}
+
+#' Compare accepted species in one focal source against another source
+#'
+#' @param focal_species Tibble from `extract_species_for_comparison()`
+#' @param other_species Tibble from `extract_species_for_comparison()`
+#' @param focal_source Character source label for focal rows
+#' @param other_source Character source label for matched rows
+#'
+#' @return Tibble with one row per focal accepted species x other match candidate
+compare_species_direction <- function(
+  focal_species,
+  other_species,
+  focal_source,
+  other_source
+) {
+  focal_acc <- focal_species %>%
+    filter(source == focal_source, taxonomicStatus == "accepted") %>%
+    transmute(
+      focal_source = focal_source,
+      focal_taxonID = taxonID,
+      focal_scientificName = scientificName,
+      canonical_species,
+      authorship,
+      species_key
+    )
+
+  other_all <- other_species %>%
+    filter(source == other_source) %>%
+    transmute(
+      species_key,
+      other_taxonID = taxonID,
+      other_scientificName = scientificName,
+      other_status = taxonomicStatus,
+      other_accepted_id = accepted_id,
+      other_accepted_name = accepted_name
+    )
+
+  out <- focal_acc %>%
+    left_join(
+      other_all,
+      by = "species_key",
+      relationship = "many-to-many"
+    ) %>%
+    group_by(focal_taxonID) %>%
+    mutate(
+      match_count_other = sum(!is.na(other_taxonID)),
+      included_in_other = any(other_status == "accepted", na.rm = TRUE),
+      ambiguous_match = match_count_other > 1,
+      same_treatment = included_in_other
+    ) %>%
+    ungroup() %>%
+    mutate(
+      rank = "species",
+      included_in_wf = case_when(
+        focal_source == "wf" ~ TRUE,
+        .default = included_in_other
+      ),
+      included_in_ppg = case_when(
+        focal_source == "ppg" ~ TRUE,
+        .default = included_in_other
+      ),
+      data_quality_issue = case_when(
+        !is.na(other_taxonID) &
+          other_status != "accepted" &
+          is.na(other_accepted_name) ~ "missing_other_accepted_name",
+        .default = NA_character_
+      )
+    )
+
+  if (focal_source == "wf") {
+    out <- out %>%
+      mutate(
+        wf_taxonID = focal_taxonID,
+        wf_scientificName = focal_scientificName
+      )
+  } else {
+    out <- out %>%
+      mutate(
+        ppg_taxonID = focal_taxonID,
+        ppg_scientificName = focal_scientificName
+      )
+  }
+
+  out
+}
+
+#' Compare accepted species between WF and PPG
+#'
+#' For each accepted species in each source, evaluates whether the same species
+#' key appears in the other source and whether the other source treats it as
+#' accepted.
+#'
+#' @param wf_dwc Dataframe of World Ferns names in Darwin Core format
+#' @param ppg_full Dataframe of PPG names in Darwin Core format
+#'
+#' @return Tibble with directional species-level comparison rows
+compare_wf_ppg_species <- function(wf_dwc, ppg_full) {
+  wf_species <- extract_species_for_comparison(wf_dwc, source_name = "wf")
+  ppg_species <- extract_species_for_comparison(ppg_full, source_name = "ppg")
+
+  wf_to_ppg <- compare_species_direction(
+    focal_species = wf_species,
+    other_species = ppg_species,
+    focal_source = "wf",
+    other_source = "ppg"
+  ) %>%
+    mutate(
+      ppg_taxonID = other_taxonID,
+      ppg_scientificName = other_scientificName
+    )
+
+  ppg_to_wf <- compare_species_direction(
+    focal_species = ppg_species,
+    other_species = wf_species,
+    focal_source = "ppg",
+    other_source = "wf"
+  ) %>%
+    mutate(wf_taxonID = other_taxonID, wf_scientificName = other_scientificName)
+
+  bind_rows(wf_to_ppg, ppg_to_wf) %>%
+    select(
+      focal_source,
+      rank,
+      canonical_species,
+      authorship,
+      species_key,
+      included_in_wf,
+      included_in_ppg,
+      same_treatment,
+      ambiguous_match,
+      match_count_other,
+      other_status,
+      other_accepted_name,
+      other_accepted_id,
+      data_quality_issue,
+      wf_taxonID,
+      wf_scientificName,
+      ppg_taxonID,
+      ppg_scientificName
+    ) %>%
+    arrange(
+      canonical_species,
+      authorship,
+      focal_source,
+      ppg_taxonID,
+      wf_taxonID
+    )
+}
+
+#' Create a user-facing species comparison table
+#'
+#' Keeps human-readable columns and adds summary reason fields so users can
+#' quickly understand why records are mismatched between WF and PPG.
+#'
+#' @param wf_ppg_species Output from `compare_wf_ppg_species()`
+#'
+#' @return Tibble suitable for user review without internal IDs
+format_wf_ppg_species_user <- function(wf_ppg_species) {
+  wf_ppg_species %>%
+    mutate(
+      other_source = case_when(
+        focal_source == "wf" ~ "ppg",
+        focal_source == "ppg" ~ "wf",
+        .default = NA_character_
+      ),
+      mismatch_source = case_when(
+        same_treatment ~ NA_character_,
+        !included_in_wf ~ "wf",
+        !included_in_ppg ~ "ppg",
+        other_status != "accepted" ~ other_source,
+        .default = other_source
+      ),
+      mismatch_reason = case_when(
+        same_treatment ~ "congruent accepted treatment",
+        !included_in_wf ~ "species missing from WF accepted list",
+        !included_in_ppg ~ "species missing from PPG accepted list",
+        other_status != "accepted" ~ paste0(
+          "matched as ",
+          other_status,
+          " in ",
+          other_source
+        ),
+        .default = "non-congruent treatment"
+      ),
+      mismatch_reason = case_when(
+        ambiguous_match ~ paste0(mismatch_reason, " (ambiguous match)"),
+        .default = mismatch_reason
+      )
+    ) %>%
+    select(
+      focal_source,
+      rank,
+      canonical_species,
+      authorship,
+      wf_scientificName,
+      ppg_scientificName,
+      included_in_wf,
+      included_in_ppg,
+      same_treatment,
+      ambiguous_match,
+      match_count_other,
+      mismatch_source,
+      mismatch_reason,
+      other_status,
+      other_accepted_name,
+      data_quality_issue
+    ) %>%
+    arrange(
+      desc(!same_treatment),
+      desc(ambiguous_match),
+      canonical_species,
+      authorship,
+      focal_source
+    )
+}

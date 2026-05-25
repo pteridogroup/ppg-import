@@ -70,12 +70,14 @@ tar_plan(
     )
   ),
 
-  # Load PPG ---
-  # Load PPG data
-  ppg_full = load_ppg(ver = "0.0.0.9005"),
-
   # WF vs PPG comparison ----
-  wf_ppg_genus_plus = compare_wf_ppg_genus_plus(wf_dwc, ppg_full)
+  # - Load PPG data
+  ppg_full = load_ppg(ver = "0.0.0.9005"),
+  # - Comparison at genus level
+  wf_ppg_genus_plus = compare_wf_ppg_genus_plus(wf_dwc, ppg_full),
+  # - Comparison at species level
+  wf_ppg_species = compare_wf_ppg_species(wf_dwc, ppg_full),
+  wf_ppg_species_user = format_wf_ppg_species_user(wf_ppg_species)
 ) |>
   tar_hook_before(
     hook = conflicted::conflict_prefer("filter", "dplyr"),
