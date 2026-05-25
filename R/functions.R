@@ -997,6 +997,77 @@ build_data_versions <- function(
   )
 }
 
+#' Return the app files required for shinyapps.io deployment
+#'
+#' @param app_file Path to the Shiny app file.
+#' @param genus_csv Path to the genus-plus comparison CSV.
+#' @param versions_csv Path to the versions metadata CSV.
+#'
+#' @return Character vector of file paths for deployment.
+get_shiny_deploy_files <- function(
+  app_file = "app.R",
+  genus_csv = "_targets/user/results/wf_ppg_genus_plus.csv",
+  versions_csv = "_targets/user/results/wf_ppg_data_versions.csv"
+) {
+  files <- c(app_file, genus_csv, versions_csv)
+
+  missing_files <- files[!file.exists(files)]
+  if (length(missing_files) > 0) {
+    stop(
+      "Cannot deploy app. Missing required file(s): ",
+      paste(missing_files, collapse = ", "),
+      ". Run targets::tar_make() to generate inputs first."
+    )
+  }
+
+  files
+}
+
+#' Deploy the Shiny app to shinyapps.io
+#'
+#' @param account shinyapps.io account name.
+#' @param app_name Application name on shinyapps.io.
+#' @param app_files Files to include in deployment bundle.
+#' @param token shinyapps.io token. Defaults to SHINYAPPS_TOKEN env var.
+#' @param secret shinyapps.io secret. Defaults to SHINYAPPS_SECRET env var.
+#'
+#' @return Deployment record from `rsconnect::deployApp()`.
+deploy_shiny_app_shinyapps <- function(
+  account = "pteridogroup",
+  app_name = "ppg-wf-explorer",
+  app_files = get_shiny_deploy_files(),
+  token = Sys.getenv("SHINYAPPS_TOKEN", unset = ""),
+  secret = Sys.getenv("SHINYAPPS_SECRET", unset = "")
+) {
+  if (!requireNamespace("rsconnect", quietly = TRUE)) {
+    stop(
+      "Package 'rsconnect' is required for deployment. Install with ",
+      "install.packages('rsconnect') or include it in renv."
+    )
+  }
+
+  if (!nzchar(token) || !nzchar(secret)) {
+    stop(
+      "Missing shinyapps.io credentials. Set SHINYAPPS_TOKEN and ",
+      "SHINYAPPS_SECRET environment variables."
+    )
+  }
+
+  rsconnect::setAccountInfo(
+    name = account,
+    token = token,
+    secret = secret
+  )
+
+  rsconnect::deployApp(
+    appDir = ".",
+    appFiles = app_files,
+    appName = app_name,
+    account = account,
+    forceUpdate = TRUE
+  )
+}
+
 
 # Extract useful information to dataframe
 # TODO: this is used in multiple repos (ppg-import, ppg-voting), so should
