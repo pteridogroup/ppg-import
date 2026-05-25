@@ -969,6 +969,34 @@ write_csv_tar <- function(x, file, ...) {
   file
 }
 
+#' Build WF and PPG version metadata for app display
+#'
+#' @param ppg_version Version string used to load PPG data.
+#' @param wf_input_path Optional path to the World Ferns input file.
+#'   Defaults to `resolve_wf_input()`.
+#'
+#' @return Tibble with one row per data source and a version label.
+build_data_versions <- function(
+  ppg_version,
+  wf_input_path = resolve_wf_input()
+) {
+  wf_file <- basename(wf_input_path)
+  wf_version <- stringr::str_match(
+    wf_file,
+    "^WorldFerns_ver_(.*)\\.csv$"
+  )[, 2]
+
+  if (is.na(wf_version) || !nzchar(wf_version)) {
+    wf_version <- wf_file
+  }
+
+  tibble::tibble(
+    source = c("World Ferns", "PPG"),
+    version = c(wf_version, as.character(ppg_version)),
+    detail = c(wf_file, paste0("v", as.character(ppg_version)))
+  )
+}
+
 
 # Extract useful information to dataframe
 # TODO: this is used in multiple repos (ppg-import, ppg-voting), so should

@@ -2,6 +2,7 @@ library(shiny)
 library(DT)
 
 genus_csv_path <- "_targets/user/results/wf_ppg_genus_plus.csv"
+versions_csv_path <- "_targets/user/results/wf_ppg_data_versions.csv"
 
 if (!file.exists(genus_csv_path)) {
   stop(
@@ -12,6 +13,74 @@ if (!file.exists(genus_csv_path)) {
 }
 
 dat <- readr::read_csv(genus_csv_path, show_col_types = FALSE)
+
+versions <- if (file.exists(versions_csv_path)) {
+  readr::read_csv(versions_csv_path, show_col_types = FALSE)
+} else {
+  tibble::tibble(source = c("World Ferns", "PPG"), version = NA_character_)
+}
+
+version_lookup <- versions |>
+  dplyr::mutate(source_key = tolower(trimws(source)))
+
+wf_version <- version_lookup |>
+  dplyr::filter(source_key == "world ferns") |>
+  dplyr::pull(version)
+wf_version <- if (length(wf_version)) wf_version[[1]] else NA_character_
+
+ppg_version <- version_lookup |>
+  dplyr::filter(source_key == "ppg") |>
+  dplyr::pull(version)
+ppg_version <- if (length(ppg_version)) ppg_version[[1]] else NA_character_
+
+version_text <- paste0(
+  "World Ferns version: ",
+  ifelse(is.na(wf_version) || !nzchar(wf_version), "unknown", wf_version),
+  " | PPG version: ",
+  ifelse(is.na(ppg_version) || !nzchar(ppg_version), "unknown", ppg_version)
+)
+
+hide_redundant_rank_values <- function(df) {
+  if (!"rank" %in% names(df)) {
+    return(df)
+  }
+
+  rank_norm <- tolower(trimws(as.character(df$rank)))
+  higher_ranks <- c(
+    "tribe",
+    "subfamily",
+    "family",
+    "suborder",
+    "order",
+    "subclass",
+    "class"
+  )
+
+  for (rank_name in higher_ranks) {
+    rank_cols <- grep(
+      paste0("^", rank_name, "_(wf|ppg)$"),
+      names(df),
+      value = TRUE
+    )
+
+    if (length(rank_cols) == 0) {
+      next
+    }
+
+    same_rank_row <- !is.na(rank_norm) & rank_norm == rank_name
+    if (!any(same_rank_row)) {
+      next
+    }
+
+    for (col_name in rank_cols) {
+      df[[col_name]][same_rank_row] <- NA_character_
+    }
+  }
+
+  df
+}
+
+dat <- hide_redundant_rank_values(dat)
 
 col_labels <- names(dat) |>
   stringr::str_replace("_wf$", " (WF)") |>
@@ -40,11 +109,13 @@ ui <- fluidPage(
   tags$head(
     tags$style(HTML(
       ".top-controls { margin-bottom: 14px; }\n",
+      ".version-note { margin: 2px 0 14px 0; color: #4b5563; }\n",
       ".dt-buttons .dt-button { margin-right: 8px !important; }\n",
       ".dt-buttons { margin-bottom: 10px; }"
     ))
   ),
-  titlePanel("WF vs PPG: Genus-level Comparison"),
+  titlePanel("WF vs PPG: Genus-level and higher comparison"),
+  div(class = "version-note", strong("Data versions: "), version_text),
   fluidRow(
     column(
       width = 12,

@@ -71,8 +71,20 @@ tar_plan(
   ),
 
   # WF vs PPG comparison ----
+  # - Pin PPG data version for reuse in outputs
+  ppg_version = "0.0.0.9005",
   # - Load PPG data
-  ppg_full = load_ppg(ver = "0.0.0.9005"),
+  ppg_full = load_ppg(ver = ppg_version),
+  # - Build source version metadata for app display
+  wf_ppg_data_versions = build_data_versions(ppg_version),
+  tar_file(
+    wf_ppg_data_versions_csv,
+    write_csv_tar(
+      wf_ppg_data_versions,
+      "_targets/user/results/wf_ppg_data_versions.csv",
+      na = ""
+    )
+  ),
   # - Comparison at genus level
   wf_ppg_genus_plus = compare_wf_ppg_genus_plus(wf_dwc, ppg_full),
   # - Write genus-level comparison CSV for deployment
