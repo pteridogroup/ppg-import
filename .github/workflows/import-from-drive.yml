@@ -110,11 +110,8 @@ jobs:
 
       - name: Download input file from Google Drive
         if: steps.resolve_id.outputs.file_id != ''
-        env:
-          GDRIVE_SA_KEY: ${{ secrets.GDRIVE_SA_KEY }}
         run: |
-          # Install the Google Drive CLI (gdown) - no service account
-          # OAuth required for files shared with the service account.
+          # Install the Google Drive CLI (gdown).
           pip install --quiet gdown
 
           FILE_ID="${{ steps.resolve_id.outputs.file_id }}"
