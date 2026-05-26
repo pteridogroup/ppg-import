@@ -171,6 +171,8 @@ jobs:
       # ------------------------------------------------------------------ #
       - name: Run tar_make()
         shell: Rscript {0}
+        env:
+          TAR_PROJECT: main
         run: |
           source("R/packages.R")
           targets::tar_make()

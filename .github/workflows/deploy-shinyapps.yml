@@ -95,6 +95,8 @@ jobs:
       - name: Build app input CSVs (manual trigger only)
         if: github.event_name == 'workflow_dispatch'
         shell: Rscript {0}
+        env:
+          TAR_PROJECT: main
         run: |
           source("R/packages.R")
           targets::tar_make(
@@ -103,9 +105,10 @@ jobs:
 
       - name: Deploy app via targets workflow
         shell: Rscript {0}
+        env:
+          TAR_PROJECT: deploy
         run: |
           source("R/packages.R")
           targets::tar_make(
-            script = "_targets_deploy.R",
             names = deploy_shiny_app
           )

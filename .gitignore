@@ -6,3 +6,6 @@ report_files
 temp/
 # Downloaded World Ferns input files (managed by CI, not versioned)
 _targets/user/data_raw/WorldFerns_ver_*.csv
+rsconnect/
+_targets/
+_targets_deploy/

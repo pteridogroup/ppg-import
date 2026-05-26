@@ -2,6 +2,8 @@
 source("R/packages.R")
 source("R/functions.R")
 
+Sys.setenv(TAR_PROJECT = "main")
+
 # Set number of workers to run in parallel differently for local vs GH actions
 targets::tar_option_set(
   controller = crew_controller_local(

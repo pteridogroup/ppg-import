@@ -1,6 +1,8 @@
 source("R/packages.R")
 source("R/functions.R")
 
+Sys.setenv(TAR_PROJECT = "deploy")
+
 tar_plan(
   tar_target(
     app_file,
