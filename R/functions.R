@@ -1776,13 +1776,14 @@ normalize_comp_rank <- function(rank) {
 #' @return Character vector with authorship removed
 strip_name_authorship <- function(name) {
   name <- str_squish(name)
+  name <- str_replace(name, "^×", "x")
 
   case_when(
     is.na(name) ~ NA_character_,
-    str_detect(name, "^(x|×)\\s+") ~ str_replace(
+    str_detect(name, "^x\\s*[A-Z]") ~ str_replace(
       name,
-      "^((?:x|×)\\s+\\S+).*",
-      "\\1"
+      "^x\\s*([A-Z][^\\s]*).*",
+      "x\\1"
     ),
     TRUE ~ str_replace(name, "^(\\S+).*", "\\1")
   )
