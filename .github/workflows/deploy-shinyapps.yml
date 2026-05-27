@@ -47,6 +47,23 @@ jobs:
             libcurl4-openssl-dev \
             libssl-dev
 
+      - name: Install gnparser
+        run: |
+          GN_URL="$(curl -s \
+            https://api.github.com/repos/gnames/gnparser/releases/latest \
+            | grep -o 'https://[^\"]*gnparser-v[0-9.]*-linux-x86.tar.gz' \
+            | head -n 1)"
+
+          if [ -z "$GN_URL" ]; then
+            echo "Could not resolve gnparser download URL."
+            exit 1
+          fi
+
+          curl -L "$GN_URL" -o /tmp/gnparser.tar.gz
+          tar -xzf /tmp/gnparser.tar.gz -C /tmp
+          sudo mv /tmp/gnparser /usr/local/bin/gnparser
+          gnparser -V
+
       - name: Cache renv packages
         uses: actions/cache@v4
         with:
