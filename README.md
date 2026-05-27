@@ -10,7 +10,8 @@ The pipeline is triggered automatically when a collaborator uploads a new
 `WorldFerns_ver_*.csv` file to a shared private Google Drive folder. A Google
 Apps Script watches the folder and fires a GitHub repository dispatch event;
 GitHub Actions then downloads the file using a Google service account, runs
-the pipeline, and uploads `wf_dwc.csv` as a workflow artifact.
+the main pipeline, and uploads `wf_ppg_genus_plus.csv` and
+`wf_ppg_data_versions.csv` as workflow artifacts.
 
 ---
 
@@ -275,8 +276,8 @@ file is uploaded to the Drive folder, the pipeline will start within
     confirm the function ran without errors and logged `"Dispatched: ..."`.
 4. Go to your GitHub repository → **Actions** tab. You should see a new
     workflow run called **"Import World Ferns from Google Drive"** starting.
-5. After it completes, click into the run and download the `wf-dwc-csv`
-    artifact to verify the output CSV.
+5. After it completes, click into the run and download the
+   `wf-ppg-genus-plus-csv` and `wf-ppg-data-versions-csv` artifacts.
 
 ---
 
@@ -297,3 +298,20 @@ Set these in **GitHub → Settings → Secrets and variables → Actions**.
    `.github/workflows/deploy-shinyapps.yml`.
 - Apps Script script properties are configured separately (not in GitHub
    Actions): `GITHUB_TOKEN` and `DRIVE_FOLDER_ID`.
+
+---
+
+## Optional IPNI enrichment workflow
+
+The main CI workflow intentionally skips IPNI lookups for speed.
+
+To run IPNI author enrichment manually, use the dedicated targets project:
+
+```r
+Sys.setenv(TAR_PROJECT = "ipni")
+targets::tar_make(names = wf_dwc_ipni_csv)
+```
+
+This writes an IPNI-enriched CSV to:
+
+- `_targets/user/results/wf_dwc_ipni.csv`

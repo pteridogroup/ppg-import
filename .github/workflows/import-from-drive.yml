@@ -203,22 +203,6 @@ jobs:
           source("R/packages.R")
           targets::tar_make()
 
-      # ------------------------------------------------------------------ #
-      # 10. Upload wf_dwc.csv as workflow artifact
-      #
-      # The Shiny repo (or any other consumer) can download this artifact
-      # via the GitHub REST API using dawidd6/action-download-artifact with
-      # a PAT scoped to actions:read on this repository.
-      # ------------------------------------------------------------------ #
-      - name: Upload wf_dwc.csv artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: wf-dwc-csv
-          path: _targets/user/results/wf_dwc.csv
-          retention-days: 90
-          if-no-files-found: warn
-
       - name: Upload wf_ppg_genus_plus.csv artifact
         if: always()
         uses: actions/upload-artifact@v4

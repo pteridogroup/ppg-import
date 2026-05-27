@@ -38,39 +38,12 @@ tar_plan(
     wf_dwc_no_parentage
   ),
 
-  # Lookup author names in IPNI ----
-  tar_group_size(
-    ipni_query,
-    prep_ipni_query(wf_dwc_auth_orig),
-    size = 1000
-  ),
-  tar_target(
-    ipni_results,
-    search_ipni(ipni_query),
-    pattern = map(ipni_query)
-  ),
-  ipni_results_summary = summarize_ipni_results(
-    wf_dwc_auth_orig,
-    ipni_query,
-    ipni_results
-  ),
-
-  # - Replace World Ferns author names and publications with IPNI data
-  # when available
-  wf_dwc = convert_to_ipni_names(wf_dwc_auth_orig, ipni_results_summary),
+  # Keep original WF authors in main pipeline.
+  # IPNI enrichment has moved to _targets_ipni.R.
+  wf_dwc = wf_dwc_auth_orig,
 
   # Count number of taxa at various ranks
   wf_taxa_count = count_taxa_in_wf(wf_with_syn),
-
-  # Produce CSV file ---
-  tar_file(
-    wf_dwc_csv,
-    write_csv_tar(
-      wf_dwc,
-      "_targets/user/results/wf_dwc.csv",
-      na = ""
-    )
-  ),
 
   # WF vs PPG comparison ----
   # - Pin PPG data version for reuse in outputs
@@ -87,7 +60,8 @@ tar_plan(
       na = ""
     )
   ),
-  # - Comparison at genus level
+  # - Comparison at genus level (doesn't use author names, so no need for
+  # standardization to IPNI)
   wf_ppg_genus_plus = compare_wf_ppg_genus_plus(wf_dwc, ppg_full),
   # - Write genus-level comparison CSV for deployment
   tar_file(
@@ -97,10 +71,7 @@ tar_plan(
       "_targets/user/results/wf_ppg_genus_plus.csv",
       na = ""
     )
-  ),
-  # - Comparison at species level
-  wf_ppg_species = compare_wf_ppg_species(wf_dwc, ppg_full),
-  wf_ppg_species_user = format_wf_ppg_species_user(wf_ppg_species)
+  )
 ) |>
   tar_hook_before(
     hook = conflicted::conflict_prefer("filter", "dplyr"),

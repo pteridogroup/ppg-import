@@ -1,6 +1,9 @@
 main:
   script: _targets.R
   store: _targets
+ipni:
+  script: _targets_ipni.R
+  store: _targets_ipni
 deploy:
   script: _targets_deploy.R
   store: _targets_deploy
