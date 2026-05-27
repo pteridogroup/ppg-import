@@ -15,9 +15,9 @@ on:
         type: string
       folder_id:
         description: >
-          Google Drive folder ID used when file_id is empty
+          Google Drive folder ID used when file_id is empty (optional;
+          defaults to repository variable WF_DRIVE_FOLDER_ID)
         required: false
-        default: 1QtKZVa29WhanKWXItRegkHFod_hhwi6x
         type: string
 
 # Prevent two runs processing the same update simultaneously.
@@ -117,6 +117,9 @@ jobs:
           FOLDER_ID="${{ github.event.client_payload.folder_id }}"
           if [ -z "$FOLDER_ID" ]; then
             FOLDER_ID="${{ inputs.folder_id }}"
+          fi
+          if [ -z "$FOLDER_ID" ]; then
+            FOLDER_ID="${{ vars.WF_DRIVE_FOLDER_ID }}"
           fi
           echo "folder_id=$FOLDER_ID" >> "$GITHUB_OUTPUT"
 

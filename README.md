@@ -277,3 +277,27 @@ file is uploaded to the Drive folder, the pipeline will start within
     workflow run called **"Import World Ferns from Google Drive"** starting.
 5. After it completes, click into the run and download the `wf-dwc-csv`
     artifact to verify the output CSV.
+
+---
+
+## GitHub Actions configuration checklist
+
+Set these in **GitHub → Settings → Secrets and variables → Actions**.
+
+### Repository variables
+
+- `WF_DRIVE_FOLDER_ID` (required when manually triggering import with empty
+   `file_id` and no `folder_id` override). Value: Google Drive folder ID
+   containing `WorldFerns_ver_*.csv` files.
+
+### Repository secrets
+
+- `SHINYAPPS_TOKEN` (required for deploy workflow)
+- `SHINYAPPS_SECRET` (required for deploy workflow)
+
+### Notes
+
+- `SHINYAPPS_ACCOUNT` and `SHINYAPPS_APP_NAME` are currently hard-coded in
+   `.github/workflows/deploy-shinyapps.yml`.
+- Apps Script script properties are configured separately (not in GitHub
+   Actions): `GITHUB_TOKEN` and `DRIVE_FOLDER_ID`.
