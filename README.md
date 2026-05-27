@@ -7,10 +7,10 @@ list by Michael Hassler and convert it to
 [Darwin Core](https://dwc.tdwg.org/terms/#taxon) format.
 
 The pipeline is triggered automatically when a collaborator uploads a new
-`WorldFerns_ver_*.csv` file to a shared Google Drive folder. A Google Apps
-Script watches the folder and fires a GitHub repository dispatch event; GitHub
-Actions then downloads the file, runs the pipeline, and uploads
-`wf_dwc.csv` as a workflow artifact.
+`WorldFerns_ver_*.csv` file to a shared private Google Drive folder. A Google
+Apps Script watches the folder and fires a GitHub repository dispatch event;
+GitHub Actions then downloads the file using a Google service account, runs
+the pipeline, and uploads `wf_dwc.csv` as a workflow artifact.
 
 ---
 
@@ -284,16 +284,12 @@ file is uploaded to the Drive folder, the pipeline will start within
 
 Set these in **GitHub → Settings → Secrets and variables → Actions**.
 
-### Repository variables
-
-- `WF_DRIVE_FOLDER_ID` (required when manually triggering import with empty
-   `file_id` and no `folder_id` override). Value: Google Drive folder ID
-   containing `WorldFerns_ver_*.csv` files.
-
 ### Repository secrets
 
 - `SHINYAPPS_TOKEN` (required for deploy workflow)
 - `SHINYAPPS_SECRET` (required for deploy workflow)
+- `GDRIVE_SA_KEY` (required for automated imports from the private Drive
+  folder)
 
 ### Notes
 
