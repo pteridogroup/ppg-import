@@ -1,6 +1,6 @@
 bioconductor.version:
 external.libraries:
-ignored.packages: jsonlite, rlang, languageserver, reprex, mdlincoln/docthis
+ignored.packages: languageserver, mdlincoln/docthis
 package.dependency.fields: Imports, Depends, LinkingTo
 r.version:
 snapshot.type: implicit

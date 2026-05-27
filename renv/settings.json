@@ -2,10 +2,7 @@
   "bioconductor.version": [],
   "external.libraries": [],
   "ignored.packages": [
-    "jsonlite",
-    "rlang",
     "languageserver",
-    "reprex",
     "mdlincoln/docthis"
   ],
   "lockfile.sanitize": true,
