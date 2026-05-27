@@ -9,9 +9,15 @@ on:
     inputs:
       file_id:
         description: >
-          Google Drive file ID to download (leave empty to use the newest
-          WorldFerns_ver_*.csv already in the repository cache)
+          Google Drive file ID to download (leave empty to auto-download
+          the newest WorldFerns_ver_*.csv from the configured Drive folder)
         required: false
+        type: string
+      folder_id:
+        description: >
+          Google Drive folder ID used when file_id is empty
+        required: false
+        default: 1QtKZVa29WhanKWXItRegkHFod_hhwi6x
         type: string
 
 # Prevent two runs processing the same update simultaneously.
@@ -108,23 +114,60 @@ jobs:
           FILE_NAME="${{ github.event.client_payload.file_name }}"
           echo "file_name=$FILE_NAME" >> "$GITHUB_OUTPUT"
 
+          FOLDER_ID="${{ github.event.client_payload.folder_id }}"
+          if [ -z "$FOLDER_ID" ]; then
+            FOLDER_ID="${{ inputs.folder_id }}"
+          fi
+          echo "folder_id=$FOLDER_ID" >> "$GITHUB_OUTPUT"
+
       - name: Download input file from Google Drive
-        if: steps.resolve_id.outputs.file_id != ''
+        id: download_input
         run: |
           # Install the Google Drive CLI (gdown).
           pip install --quiet gdown
 
           FILE_ID="${{ steps.resolve_id.outputs.file_id }}"
           FILE_NAME="${{ steps.resolve_id.outputs.file_name }}"
+          FOLDER_ID="${{ steps.resolve_id.outputs.folder_id }}"
+          SELECTED_FILE_NAME=""
 
-          # Determine output filename: use name from payload when available,
-          # otherwise let gdown infer from Drive metadata.
           if [ -n "$FILE_NAME" ]; then
+            # Use explicit filename from dispatch payload when available.
             DEST="_targets/user/data_raw/$FILE_NAME"
             gdown --id "$FILE_ID" --output "$DEST"
-          else
+            SELECTED_FILE_NAME="$FILE_NAME"
+          elif [ -n "$FILE_ID" ]; then
+            # Fall back to Drive metadata to determine filename.
             gdown --id "$FILE_ID" --output "_targets/user/data_raw/"
+            SELECTED_FILE_NAME="$(find _targets/user/data_raw -type f \
+              -name 'WorldFerns_ver_*.csv' | sort | tail -n 1 | xargs basename)"
+          else
+            # Manual runs may omit file_id; in that case, download the folder
+            # and keep the newest WorldFerns_ver_*.csv by filename.
+            if [ -z "$FOLDER_ID" ]; then
+              echo "No file_id provided and no folder_id available."
+              exit 1
+            fi
+
+            TMP_DIR="$(mktemp -d)"
+            gdown \
+              --folder "https://drive.google.com/drive/folders/$FOLDER_ID" \
+              --output "$TMP_DIR"
+
+            NEWEST_FILE="$(find "$TMP_DIR" -type f \
+              -name 'WorldFerns_ver_*.csv' | sort | tail -n 1)"
+
+            if [ -z "$NEWEST_FILE" ]; then
+              echo "No WorldFerns_ver_*.csv found in folder: $FOLDER_ID"
+              exit 1
+            fi
+
+            cp "$NEWEST_FILE" "_targets/user/data_raw/$(basename "$NEWEST_FILE")"
+            SELECTED_FILE_NAME="$(basename "$NEWEST_FILE")"
+            echo "Downloaded newest file: $SELECTED_FILE_NAME"
           fi
+
+          echo "selected_file_name=$SELECTED_FILE_NAME" >> "$GITHUB_OUTPUT"
 
       # ------------------------------------------------------------------ #
       # 7. Set WORLD_FERNS_INPUT (resolve_wf_input() will read this)
@@ -159,6 +202,9 @@ jobs:
             >> "$GITHUB_STEP_SUMMARY"
           echo "| Drive filename | \
            ${{ steps.resolve_id.outputs.file_name || 'auto-resolved' }} |" \
+            >> "$GITHUB_STEP_SUMMARY"
+          echo "| Downloaded input filename | \
+           ${{ steps.download_input.outputs.selected_file_name || 'n/a' }} |" \
             >> "$GITHUB_STEP_SUMMARY"
           echo "| Run started | $(date -u '+%Y-%m-%d %H:%M UTC') |" \
             >> "$GITHUB_STEP_SUMMARY"
