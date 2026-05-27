@@ -5,6 +5,16 @@ name: Import World Ferns from Google Drive
 on:
   repository_dispatch:
     types: [worldferns_updated]
+  workflow_dispatch:
+    inputs:
+      file_id:
+        description: "Google Drive file ID to download (required for manual run)"
+        required: true
+        type: string
+      file_name:
+        description: "Filename to save as in data_raw (required for manual run)"
+        required: true
+        type: string
 
 # Prevent two runs processing the same update simultaneously.
 concurrency:
@@ -106,18 +116,22 @@ jobs:
       - name: Resolve Drive file ID
         id: resolve_id
         run: |
-          FILE_ID="${{ github.event.client_payload.file_id }}"
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            FILE_ID="${{ github.event.client_payload.file_id }}"
+            FILE_NAME="${{ github.event.client_payload.file_name }}"
+          else
+            FILE_ID="${{ inputs.file_id }}"
+            FILE_NAME="${{ inputs.file_name }}"
+          fi
           if [ -z "$FILE_ID" ]; then
-            echo "repository_dispatch payload is missing client_payload.file_id"
+            echo "No file_id provided."
+            exit 1
+          fi
+          if [ -z "$FILE_NAME" ]; then
+            echo "No file_name provided."
             exit 1
           fi
           echo "file_id=$FILE_ID" >> "$GITHUB_OUTPUT"
-
-          FILE_NAME="${{ github.event.client_payload.file_name }}"
-          if [ -z "$FILE_NAME" ]; then
-            echo "repository_dispatch payload is missing client_payload.file_name"
-            exit 1
-          fi
           echo "file_name=$FILE_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Download input file from Google Drive
