@@ -91,12 +91,48 @@ jobs:
         run: |
           mkdir -p _targets/user/results
 
+      - name: Resolve latest successful import run (manual trigger only)
+        if: github.event_name == 'workflow_dispatch'
+        id: latest_import_run
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const res = await github.rest.actions.listWorkflowRuns({
+              owner,
+              repo,
+              workflow_id: 'import-from-drive.yml',
+              status: 'success',
+              branch: 'main',
+              per_page: 1
+            });
+
+            if (!res.data.workflow_runs.length) {
+              core.setFailed(
+                'No successful runs found for import-from-drive.yml on main.'
+              );
+              return;
+            }
+
+            const runId = String(res.data.workflow_runs[0].id);
+            core.info(`Using import run ID: ${runId}`);
+            core.setOutput('run_id', runId);
+
       - name: Download wf_ppg_genus_plus.csv artifact
         if: github.event_name == 'workflow_run'
         uses: actions/download-artifact@v4
         with:
           name: wf-ppg-genus-plus-csv
           run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: _targets/user/results
+
+      - name: Download wf_ppg_genus_plus.csv artifact (manual trigger)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/download-artifact@v4
+        with:
+          name: wf-ppg-genus-plus-csv
+          run-id: ${{ steps.latest_import_run.outputs.run_id }}
           github-token: ${{ github.token }}
           path: _targets/user/results
 
@@ -109,16 +145,14 @@ jobs:
           github-token: ${{ github.token }}
           path: _targets/user/results
 
-      - name: Build app input CSVs (manual trigger only)
+      - name: Download wf_ppg_data_versions.csv artifact (manual trigger)
         if: github.event_name == 'workflow_dispatch'
-        shell: Rscript {0}
-        env:
-          TAR_PROJECT: main
-        run: |
-          source("R/packages.R")
-          targets::tar_make(
-            names = c(wf_ppg_genus_plus_csv, wf_ppg_data_versions_csv)
-          )
+        uses: actions/download-artifact@v4
+        with:
+          name: wf-ppg-data-versions-csv
+          run-id: ${{ steps.latest_import_run.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: _targets/user/results
 
       - name: Deploy app via targets workflow
         shell: Rscript {0}
