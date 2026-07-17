@@ -47,7 +47,7 @@ tar_plan(
 
   # WF vs PPG comparison ----
   # - Pin PPG data version for reuse in outputs
-  ppg_version = "0.0.0.9006",
+  ppg_version = "0.0.0.9008",
   # - Load PPG data
   ppg_full = load_ppg(ver = ppg_version),
   # - Build source version metadata for app display
