@@ -1,0 +1,116 @@
+name: Check PPG Version
+
+# Daily check for a new pteridogroup/ppg release. If the pinned ppg_version
+# in _targets.R is out of date, bump it, commit, and trigger the existing
+# import/deploy chain (import-from-drive.yml -> deploy-shinyapps.yml), which
+# auto-discovers the newest World Ferns file in the shared Drive folder
+# since no upload event supplied one.
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      force_run:
+        description: >-
+          Trigger the import/deploy pipeline even if the PPG version
+          hasn't changed.
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: check-ppg-version
+  cancel-in-progress: false
+
+jobs:
+  check-and-bump:
+    name: Check for a new PPG release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      contents: write
+      actions: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine latest PPG release and current pinned version
+        id: versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          LATEST_TAG="$(gh release list --repo pteridogroup/ppg --limit 1 --json tagName --jq '.[0].tagName')"
+          if [ -z "$LATEST_TAG" ]; then
+            echo "Could not determine latest pteridogroup/ppg release."
+            exit 1
+          fi
+          LATEST_VERSION="${LATEST_TAG#v}"
+
+          CURRENT_VERSION="$(grep -oE 'ppg_version = "[^"]*"' _targets.R | head -n 1 | grep -oE '"[^"]*"' | tr -d '"')"
+          if [ -z "$CURRENT_VERSION" ]; then
+            echo "Could not find ppg_version in _targets.R."
+            exit 1
+          fi
+
+          echo "latest_version=$LATEST_VERSION" >> "$GITHUB_OUTPUT"
+          echo "current_version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Decide whether to proceed
+        id: decide
+        run: |
+          if [ "${{ steps.versions.outputs.latest_version }}" != "${{ steps.versions.outputs.current_version }}" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          elif [ "${{ inputs.force_run }}" = "true" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ------------------------------------------------------------------ #
+      # Bump _targets.R and push directly to main (mirrors past manual
+      # bumps, e.g. commits d1be15e / 1a78e11).
+      # ------------------------------------------------------------------ #
+      - name: Bump ppg_version in _targets.R
+        if: steps.decide.outputs.changed == 'true'
+        run: |
+          sed -i -E 's/(ppg_version = )"[^"]*"/\1"${{ steps.versions.outputs.latest_version }}"/' _targets.R
+          git diff _targets.R
+
+      - name: Commit and push version bump
+        if: steps.decide.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add _targets.R
+          git commit -m "Bump PPG version to v${{ steps.versions.outputs.latest_version }}"
+          git push
+
+      # ------------------------------------------------------------------ #
+      # Trigger the existing import pipeline with no file_id/file_name, so
+      # it auto-discovers the newest World Ferns file in the Drive folder.
+      # Its completion triggers deploy-shinyapps.yml automatically via the
+      # existing workflow_run trigger - no separate deploy step needed here.
+      # ------------------------------------------------------------------ #
+      - name: Trigger import pipeline
+        if: steps.decide.outputs.should_run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run import-from-drive.yml --repo "${{ github.repository }}" --ref main
+
+      - name: Write summary
+        run: |
+          echo "## PPG version check" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Current pinned version | ${{ steps.versions.outputs.current_version }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Latest pteridogroup/ppg release | ${{ steps.versions.outputs.latest_version }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Version changed | ${{ steps.decide.outputs.changed }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| force_run input | ${{ inputs.force_run }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Pipeline triggered | ${{ steps.decide.outputs.should_run }} |" >> "$GITHUB_STEP_SUMMARY"

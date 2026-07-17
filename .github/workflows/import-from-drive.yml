@@ -8,12 +8,14 @@ on:
   workflow_dispatch:
     inputs:
       file_id:
-        description: "Google Drive file ID to download (required for manual run)"
-        required: true
+        description: >-
+          Google Drive file ID to download. Leave blank to auto-discover
+          the newest WorldFerns_ver_*.csv in the shared Drive folder.
+        required: false
         type: string
       file_name:
-        description: "Filename to save as in data_raw (required for manual run)"
-        required: true
+        description: "Filename to save as in data_raw (required if file_id is set)"
+        required: false
         type: string
 
 # Prevent two runs processing the same update simultaneously.
@@ -109,9 +111,12 @@ jobs:
       # ------------------------------------------------------------------ #
       # 6. Download World Ferns input file from Google Drive
       #
-      # The dispatch payload (from Apps Script) supplies the Drive file ID and
-      # file name. The file is saved with its original name so tar_file_read()
-      # change-detection still works correctly.
+      # The dispatch payload (from Apps Script) or manual-dispatch inputs
+      # supply the Drive file ID and file name. If neither is given (manual
+      # dispatch with file_id left blank), the newest WorldFerns_ver_*.csv
+      # in the shared Drive folder is auto-discovered and downloaded
+      # instead. The file is saved with its original name so
+      # tar_file_read() change-detection still works correctly.
       # ------------------------------------------------------------------ #
       - name: Resolve Drive file ID
         id: resolve_id
@@ -119,30 +124,34 @@ jobs:
           if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
             FILE_ID="${{ github.event.client_payload.file_id }}"
             FILE_NAME="${{ github.event.client_payload.file_name }}"
-          else
+            if [ -z "$FILE_ID" ] || [ -z "$FILE_NAME" ]; then
+              echo "repository_dispatch payload is missing file_id or file_name."
+              exit 1
+            fi
+            echo "auto=false" >> "$GITHUB_OUTPUT"
+            echo "file_id=$FILE_ID" >> "$GITHUB_OUTPUT"
+            echo "file_name=$FILE_NAME" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ inputs.file_id }}" ]; then
             FILE_ID="${{ inputs.file_id }}"
             FILE_NAME="${{ inputs.file_name }}"
+            if [ -z "$FILE_NAME" ]; then
+              echo "file_name is required when file_id is provided."
+              exit 1
+            fi
+            echo "auto=false" >> "$GITHUB_OUTPUT"
+            echo "file_id=$FILE_ID" >> "$GITHUB_OUTPUT"
+            echo "file_name=$FILE_NAME" >> "$GITHUB_OUTPUT"
+          else
+            echo "No file_id provided; auto-discovering newest Drive file."
+            echo "auto=true" >> "$GITHUB_OUTPUT"
           fi
-          if [ -z "$FILE_ID" ]; then
-            echo "No file_id provided."
-            exit 1
-          fi
-          if [ -z "$FILE_NAME" ]; then
-            echo "No file_name provided."
-            exit 1
-          fi
-          echo "file_id=$FILE_ID" >> "$GITHUB_OUTPUT"
-          echo "file_name=$FILE_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Download input file from Google Drive
         id: download_input
         env:
           GDRIVE_SA_KEY: ${{ secrets.GDRIVE_SA_KEY }}
+          WF_DRIVE_FOLDER_ID: ${{ secrets.WF_DRIVE_FOLDER_ID }}
         run: |
-          FILE_ID="${{ steps.resolve_id.outputs.file_id }}"
-          FILE_NAME="${{ steps.resolve_id.outputs.file_name }}"
-          DEST="_targets/user/data_raw/$FILE_NAME"
-
           if [ -z "$GDRIVE_SA_KEY" ]; then
             echo "Actions secret GDRIVE_SA_KEY is required for private Drive downloads."
             exit 1
@@ -150,22 +159,42 @@ jobs:
 
           printf '%s' "$GDRIVE_SA_KEY" > _targets/user/data_raw/gdrive-sa-key.json
           pip install --quiet google-api-python-client google-auth
-          python scripts/download_worldferns_file_from_drive.py \
-            --file-id "$FILE_ID" \
-            --out-path "$DEST" \
-            --credentials _targets/user/data_raw/gdrive-sa-key.json
+
+          if [ "${{ steps.resolve_id.outputs.auto }}" = "true" ]; then
+            if [ -z "$WF_DRIVE_FOLDER_ID" ]; then
+              echo "Actions secret WF_DRIVE_FOLDER_ID is required to auto-discover the input file."
+              rm -f _targets/user/data_raw/gdrive-sa-key.json
+              exit 1
+            fi
+            RESOLVED="$(python scripts/download_worldferns_file_from_drive.py \
+              --folder-id "$WF_DRIVE_FOLDER_ID" \
+              --out-dir _targets/user/data_raw \
+              --credentials _targets/user/data_raw/gdrive-sa-key.json)"
+          else
+            RESOLVED="$(python scripts/download_worldferns_file_from_drive.py \
+              --file-id "${{ steps.resolve_id.outputs.file_id }}" \
+              --file-name "${{ steps.resolve_id.outputs.file_name }}" \
+              --out-dir _targets/user/data_raw \
+              --credentials _targets/user/data_raw/gdrive-sa-key.json)"
+          fi
           rm -f _targets/user/data_raw/gdrive-sa-key.json
 
-          echo "selected_file_name=$FILE_NAME" >> "$GITHUB_OUTPUT"
+          echo "$RESOLVED"
+          FILE_ID="$(echo "$RESOLVED" | grep '^file_id=' | cut -d= -f2-)"
+          FILE_NAME="$(echo "$RESOLVED" | grep '^file_name=' | cut -d= -f2-)"
+          if [ -z "$FILE_ID" ] || [ -z "$FILE_NAME" ]; then
+            echo "Download script did not report a resolved file_id/file_name."
+            exit 1
+          fi
+          echo "file_id=$FILE_ID" >> "$GITHUB_OUTPUT"
+          echo "file_name=$FILE_NAME" >> "$GITHUB_OUTPUT"
 
       # ------------------------------------------------------------------ #
       # 7. Set WORLD_FERNS_INPUT (resolve_wf_input() will read this)
-      #
-      # The dispatch payload includes the downloaded filename.
       # ------------------------------------------------------------------ #
       - name: Set WORLD_FERNS_INPUT environment variable
         run: |
-          FILE_NAME="${{ steps.resolve_id.outputs.file_name }}"
+          FILE_NAME="${{ steps.download_input.outputs.file_name }}"
           echo "WORLD_FERNS_INPUT=_targets/user/data_raw/$FILE_NAME" \
             >> "$GITHUB_ENV"
 
@@ -180,14 +209,14 @@ jobs:
           echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Trigger | ${{ github.event_name }} |" \
             >> "$GITHUB_STEP_SUMMARY"
+          echo "| Auto-discovered from Drive folder | \
+           ${{ steps.resolve_id.outputs.auto || 'false' }} |" \
+            >> "$GITHUB_STEP_SUMMARY"
           echo "| Drive file ID | \
-           ${{ steps.resolve_id.outputs.file_id }} |" \
+           ${{ steps.download_input.outputs.file_id }} |" \
             >> "$GITHUB_STEP_SUMMARY"
           echo "| Drive filename | \
-           ${{ steps.resolve_id.outputs.file_name }} |" \
-            >> "$GITHUB_STEP_SUMMARY"
-          echo "| Downloaded input filename | \
-           ${{ steps.download_input.outputs.selected_file_name || 'n/a' }} |" \
+           ${{ steps.download_input.outputs.file_name }} |" \
             >> "$GITHUB_STEP_SUMMARY"
           echo "| Run started | $(date -u '+%Y-%m-%d %H:%M UTC') |" \
             >> "$GITHUB_STEP_SUMMARY"

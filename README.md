@@ -13,6 +13,13 @@ GitHub Actions then downloads the file using a Google service account, runs
 the main pipeline, and uploads `wf_ppg_genus_plus.csv` and
 `wf_ppg_data_versions.csv` as workflow artifacts.
 
+A separate daily check also watches for new
+[`pteridogroup/ppg`](https://github.com/pteridogroup/ppg) releases. When one
+is found, it bumps the pinned `ppg_version` in `_targets.R` and re-triggers
+the same import pipeline, which re-downloads the newest World Ferns file from
+Drive since no upload event supplied one. See
+[Automatic PPG version check](#automatic-ppg-version-check) below.
+
 ---
 
 ## Automated pipeline setup
@@ -281,6 +288,40 @@ file is uploaded to the Drive folder, the pipeline will start within
 
 ---
 
+## Automatic PPG version check
+
+`.github/workflows/check-ppg-version.yml` runs daily (and can be triggered
+manually) to keep the pinned `ppg_version` in `_targets.R` in sync with the
+latest [`pteridogroup/ppg`](https://github.com/pteridogroup/ppg) release,
+without requiring anyone to notice a new release and hand-edit the file.
+
+1. It checks the latest `pteridogroup/ppg` release tag and compares it
+   against the `ppg_version` value in `_targets.R`.
+2. If they differ, it updates `_targets.R`, commits, and pushes directly to
+   `main`.
+3. If the version changed (or the manual `force_run` input is set to
+   `true`), it triggers `import-from-drive.yml` with no `file_id`/
+   `file_name`, so it auto-discovers and downloads the newest
+   `WorldFerns_ver_*.csv` in the shared Drive folder instead of waiting for
+   an upload event. That run's completion triggers `deploy-shinyapps.yml`
+   automatically, same as a normal Drive-triggered run.
+
+To force a rebuild and redeploy even when the PPG version hasn't changed
+(e.g. to pick up a newer World Ferns upload without a matching PPG release),
+run the workflow manually from the **Actions** tab, or:
+
+```sh
+gh workflow run check-ppg-version.yml --repo pteridogroup/ppg-import -f force_run=true
+```
+
+`check-ppg-version.yml` itself doesn't talk to Drive directly — it just
+dispatches `import-from-drive.yml`, which (when given no `file_id`) needs
+the `GDRIVE_SA_KEY` and `WF_DRIVE_FOLDER_ID` secrets (see the checklist
+below) to resolve the latest file itself rather than receiving one from an
+upload event.
+
+---
+
 ## GitHub Actions configuration checklist
 
 Set these in **GitHub → Settings → Secrets and variables → Actions**.
@@ -291,13 +332,22 @@ Set these in **GitHub → Settings → Secrets and variables → Actions**.
 - `SHINYAPPS_SECRET` (required for deploy workflow)
 - `GDRIVE_SA_KEY` (required for automated imports from the private Drive
   folder)
+- `WF_DRIVE_FOLDER_ID` (required for auto-discovery runs of
+  `import-from-drive.yml` — manual dispatch with `file_id` left blank, or
+  triggered by `check-ppg-version.yml` — to look up the newest file in the
+  shared Drive folder; same folder ID as the Apps Script's `DRIVE_FOLDER_ID`
+  script property, step 3a/3d above, just under a distinct name since
+  GitHub Actions secrets and Apps Script script properties are separate
+  namespaces)
 
 ### Notes
 
 - `SHINYAPPS_ACCOUNT` and `SHINYAPPS_APP_NAME` are currently hard-coded in
    `.github/workflows/deploy-shinyapps.yml`.
-- Apps Script script properties are configured separately (not in GitHub
-   Actions): `GITHUB_TOKEN` and `DRIVE_FOLDER_ID`.
+- The Apps Script's `GITHUB_TOKEN` script property (step 3d above) is
+   separate from GitHub Actions secrets — it's a GitHub PAT used by Apps
+   Script to fire `repository_dispatch` events, not something Actions
+   itself reads.
 
 ---
 
