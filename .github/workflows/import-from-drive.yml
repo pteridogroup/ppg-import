@@ -34,7 +34,7 @@ jobs:
       RENV_PATHS_CACHE: ~/.local/share/renv
 
     permissions:
-      contents: read
+      contents: write
 
     steps:
       # ------------------------------------------------------------------ #
@@ -231,6 +231,22 @@ jobs:
         run: |
           source("R/packages.R")
           targets::tar_make()
+
+      # Publish the finished CSVs so the PPG website build can download them
+      # from a stable URL:
+      # https://github.com/pteridogroup/ppg-import/releases/download/latest-comparison/<file>
+      # The tag and file names must not change.
+      - name: Publish CSVs to latest-comparison release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view latest-comparison >/dev/null 2>&1 || \
+            gh release create latest-comparison \
+              --title "Latest WF vs PPG comparison" \
+              --notes "Updated automatically by the import workflow."
+          gh release upload latest-comparison \
+            _targets/user/results/wf_ppg_genus_plus.csv \
+            _targets/user/results/wf_ppg_data_versions.csv --clobber
 
       - name: Upload wf_ppg_genus_plus.csv artifact
         if: always()
