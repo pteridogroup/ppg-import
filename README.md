@@ -11,7 +11,10 @@ The pipeline is triggered automatically when a collaborator uploads a new
 Apps Script watches the folder and fires a GitHub repository dispatch event;
 GitHub Actions then downloads the file using a Google service account, runs
 the main pipeline, and uploads `wf_ppg_genus_plus.csv` and
-`wf_ppg_data_versions.csv` as workflow artifacts.
+`wf_ppg_data_versions.csv` as workflow artifacts and to the public
+`latest-comparison` release, which the
+[PPG website](https://pteridogroup.github.io/world-ferns.html) reads to show
+the WF vs PPG comparison.
 
 A separate daily check also watches for new
 [`pteridogroup/ppg`](https://github.com/pteridogroup/ppg) releases. When one
@@ -303,10 +306,9 @@ without requiring anyone to notice a new release and hand-edit the file.
    `true`), it triggers `import-from-drive.yml` with no `file_id`/
    `file_name`, so it auto-discovers and downloads the newest
    `WorldFerns_ver_*.csv` in the shared Drive folder instead of waiting for
-   an upload event. That run's completion triggers `deploy-shinyapps.yml`
-   automatically, same as a normal Drive-triggered run.
+   an upload event.
 
-To force a rebuild and redeploy even when the PPG version hasn't changed
+To force a rebuild even when the PPG version hasn't changed
 (e.g. to pick up a newer World Ferns upload without a matching PPG release),
 run the workflow manually from the **Actions** tab, or:
 
@@ -328,8 +330,6 @@ Set these in **GitHub → Settings → Secrets and variables → Actions**.
 
 ### Repository secrets
 
-- `SHINYAPPS_TOKEN` (required for deploy workflow)
-- `SHINYAPPS_SECRET` (required for deploy workflow)
 - `GDRIVE_SA_KEY` (required for automated imports from the private Drive
   folder)
 - `WF_DRIVE_FOLDER_ID` (required for auto-discovery runs of
@@ -342,8 +342,6 @@ Set these in **GitHub → Settings → Secrets and variables → Actions**.
 
 ### Notes
 
-- `SHINYAPPS_ACCOUNT` and `SHINYAPPS_APP_NAME` are currently hard-coded in
-   `.github/workflows/deploy-shinyapps.yml`.
 - The Apps Script's `GITHUB_TOKEN` script property (step 3d above) is
    separate from GitHub Actions secrets — it's a GitHub PAT used by Apps
    Script to fire `repository_dispatch` events, not something Actions
