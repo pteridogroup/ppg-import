@@ -243,7 +243,44 @@ get_rank_by_num <- function(wf_with_syn, wf_syns, wf_dwc_no_parentage) {
     )
 }
 
+# Check that every scientific name (accepted and synonym) starts with a
+# plausible genus name, e.g. "Asplenium", "xOsmunasium", "Filix-Foemina".
+# Catches typos in the World Ferns input such as "6Asplenium griseum" that
+# would otherwise surface later as an unhelpful assertr error (the genus is
+# parsed as the first word of the name). Stops with a list of offending names.
+check_wf_genus_names <- function(wf_with_syn, wf_syns) {
+  genus_pattern <- "^[x\u00d7]?[A-Z][a-z]+(-[A-Za-z]+)?$"
+
+  bad <-
+    bind_rows(
+      wf_with_syn %>%
+        mutate(csv_line = row_number() + 1L), # +1 for the header row
+      wf_syns %>%
+        mutate(csv_line = NA_integer_)
+    ) %>%
+    mutate(genus = genus_from_sp(scientificName)) %>%
+    filter(!str_detect(genus, genus_pattern) | is.na(genus)) %>%
+    select(csv_line, taxonRank, taxonomicStatus, scientificName)
+
+  if (nrow(bad) > 0) {
+    stop(
+      nrow(bad), " name(s) in the World Ferns input do not start with a ",
+      "valid genus name (check for typos):\n",
+      paste0(
+        "  ",
+        ifelse(is.na(bad$csv_line), "synonym", paste("line", bad$csv_line)),
+        " [", bad$taxonRank, "]: ", bad$scientificName,
+        collapse = "\n"
+      ),
+      call. = FALSE
+    )
+  }
+  invisible(wf_with_syn)
+}
+
 clean_wf <- function(wf_with_syn, wf_syns, rank_by_num, wf_dwc_no_parentage) {
+  check_wf_genus_names(wf_with_syn, wf_syns)
+
   # Split out each high-level taxon and parse the number system
   order_by_num <- filter(rank_by_num, taxonRank == "order") %>%
     arrange(number) %>%
