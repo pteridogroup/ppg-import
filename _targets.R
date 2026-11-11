@@ -63,7 +63,8 @@ tar_plan(
   # - Comparison at genus level (doesn't use author names, so no need for
   # standardization to IPNI)
   wf_ppg_genus_plus = compare_wf_ppg_genus_plus(wf_dwc, ppg_full),
-  # - Write genus-level comparison CSV for deployment
+  # - Write genus-level comparison CSV (published to the latest-comparison
+  # release by import-from-drive.yml, and shown on the PPG website)
   tar_file(
     wf_ppg_genus_plus_csv,
     write_csv_tar(
